@@ -772,7 +772,8 @@ do
     do
         local mh = overlays.musicHud
         local cover = new("Frame",{Size=UDim2.new(0,78,0,78),Position=UDim2.new(0,12,0,13),BackgroundColor3=Color3.fromRGB(255,255,255),BorderSizePixel=0,Parent=mh})
-        corner(cover,10); gradient(cover,T.Accent,T.Accent2,45)
+        corner(cover,10)
+        local coverG = gradient(cover,T.Accent,T.Accent2,45)
         new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(1,0,1,0),Font=Enum.Font.GothamBold,Text="♪",TextColor3=ON_ACCENT,TextSize=32,Parent=cover})
         coverImg = new("ImageLabel",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Image="",ScaleType=Enum.ScaleType.Crop,Parent=cover})
         corner(coverImg,10)
@@ -804,7 +805,8 @@ do
         mhTrack = new("Frame",{Position=UDim2.new(0,102,0,88),Size=UDim2.new(1,-114,0,4),BackgroundColor3=T.Line,BackgroundTransparency=0.2,BorderSizePixel=0,Parent=mh})
         corner(mhTrack,2)
         mhFill = new("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.Accent,BorderSizePixel=0,Parent=mhTrack})
-        corner(mhFill,2); gradient(mhFill,T.Accent,T.Accent2,0)
+        corner(mhFill,2)
+        local fillG = gradient(mhFill,T.Accent,T.Accent2,0)
         mhTrack.InputBegan:Connect(function(i)
             if i.UserInputType == Enum.UserInputType.MouseButton1 and Music.sound and Music.sound.TimeLength > 0 then
                 local rel = math.clamp((i.Position.X - mhTrack.AbsolutePosition.X) / mhTrack.AbsoluteSize.X, 0, 1)
@@ -813,6 +815,8 @@ do
         end)
 
         Fn.updateHud = function()
+            coverG.Color = ColorSequence.new(T.Accent, T.Accent2)
+            fillG.Color = ColorSequence.new(T.Accent, T.Accent2)
             mhTitle.Text = Music.name
             mhSub.Text = (Music.artist ~= "" and Music.artist) or (Music.id and ("ID "..Music.id)) or "Pick a song in the Music tab"
             coverImg.Image = Music.id and ("rbxthumb://type=Asset&id="..Music.id.."&w=150&h=150") or ""
@@ -1646,16 +1650,19 @@ Fn.setEffectColor = function(c, quiet)
     if not quiet then notify("Color", "Applied to all effects") end
 end
 
-Fn.hudPack = function()
-    Fn.setGlass(false, true)
-    for k, v in pairs(PRESETS.Teal) do T[k] = v end
-    applyTheme(); Fn.applyAllTransparency(); Fn.refreshKb()
-    Fn.setEffectColor(Color3.fromRGB(80, 235, 185), true)
+Fn.hudPack = function(presetName)
+    if presetName and PRESETS[presetName] then
+        Fn.setGlass(false, true)
+        for k, v in pairs(PRESETS[presetName]) do T[k] = v end
+        applyTheme(); Fn.applyAllTransparency(); Fn.refreshKb()
+    end
+    UI.hudSync = true   -- effects (tint, vignette, cubes, ...) now follow the theme accent
+    Fn.setEffectColor(T.Accent, true)
     for _, n in ipairs({"MusicHud","Coords","SpeedHud","KbOverlay","LyricsBar","FxTint","FxVignette","FxBloom"}) do
         if ToggleReg[n] then ToggleReg[n](true) end
     end
     Fn.updateHud()
-    notify("HUD Pack", "Teal HUD enabled")
+    notify("HUD Pack", (presetName or "Current theme") .. " HUD enabled")
 end
 
 -- ══════════════════════════════════════════════════════════════
@@ -1870,7 +1877,7 @@ end
 -- OVERLAYS TAB ---------------------------------------------------
 do
     hdr(pOver, "HUD Pack")
-    mkB(pOver, "Enable Full Teal HUD", Fn.hudPack)
+    mkB(pOver, "Enable Full HUD (current theme)", function() Fn.hudPack() end)
     hdr(pOver, "Overlays")
     mkT(pOver, "Music HUD", false, function(s) overlays.musicHud.Visible = s; if s then Fn.updateHud() end end, "MusicHud")
     mkT(pOver, "Lyrics Bar", false, function(s) overlays.lyrics.Visible = s; Lyrics.key = nil end, "LyricsBar")
@@ -1911,6 +1918,11 @@ do
         if not Glass.on then Fn.setOpacity(v / 100) end
     end, "UITransparency")
 
+    hdr(pTheme, "Full HUD  (theme + HUD + tint + vignette + bloom)")
+    for _, name in ipairs(PRESET_ORDER) do
+        mkB(pTheme, name .. " HUD", function() Fn.hudPack(name) end)
+    end
+
     hdr(pTheme, "Presets")
     for _, name in ipairs(PRESET_ORDER) do
         mkB(pTheme, name, function()
@@ -1918,6 +1930,7 @@ do
             for k, v in pairs(PRESETS[name]) do T[k] = v end
             applyTheme()
             Fn.applyAllTransparency()
+            if UI.hudSync then Fn.setEffectColor(PRESETS[name].Accent, true) end
             Fn.refreshKb()
             Fn.updateHud()
             notify("Theme", name .. " applied")
