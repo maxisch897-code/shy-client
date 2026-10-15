@@ -1,0 +1,2462 @@
+-- Shy Client v2
+-- Made by n_e_r_v_y with love
+
+local UIS = game:GetService("UserInputService")
+local TS  = game:GetService("TweenService")
+local RS  = game:GetService("RunService")
+local Stats = game:GetService("Stats")
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local HttpService = game:GetService("HttpService")
+local SoundService = game:GetService("SoundService")
+local AssetService = game:GetService("AssetService")
+local player = Players.LocalPlayer
+local camera = workspace.CurrentCamera
+local pg = player:WaitForChild("PlayerGui")
+
+-- cleanup of old runs
+for _, n in ipairs({"ShyClient","ShyOverlays","ShyPrompt","ShyNotify"}) do
+    local o = pg:FindFirstChild(n); if o then o:Destroy() end
+end
+for _, o in ipairs(Lighting:GetChildren()) do
+    if o.Name:sub(1, 3) == "Shy" then o:Destroy() end
+end
+do
+    local f = workspace:FindFirstChild("ShyFX"); if f then f:Destroy() end
+    local m = SoundService:FindFirstChild("ShyMusic"); if m then m:Destroy() end
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- CORE TABLES  (kept in tables so we never hit Luau's 200-locals limit)
+-- ══════════════════════════════════════════════════════════════
+local TR = { Window=0.05, Title=0.03, Sidebar=0.03, Content=0.04, Card=0.02, Overlay=0.12, Notify=0.04 }
+
+local T = {
+    Bg        = Color3.fromRGB(14, 14, 16),
+    Panel     = Color3.fromRGB(18, 18, 20),
+    Sidebar   = Color3.fromRGB(20, 20, 22),
+    Card      = Color3.fromRGB(26, 26, 30),
+    Hover     = Color3.fromRGB(34, 34, 38),
+    Text      = Color3.fromRGB(235, 235, 240),
+    Dim       = Color3.fromRGB(150, 150, 160),
+    Muted     = Color3.fromRGB(90, 90, 100),
+    Line      = Color3.fromRGB(42, 42, 46),
+    Accent    = Color3.fromRGB(200, 200, 210),
+    Accent2   = Color3.fromRGB(150, 150, 165),
+    On        = Color3.fromRGB(200, 200, 210),
+    Off       = Color3.fromRGB(45, 45, 50),
+    Bad       = Color3.fromRGB(240, 100, 110),
+}
+
+local PRESETS = {
+    Gray     = { Bg=Color3.fromRGB(14,14,16),   Panel=Color3.fromRGB(18,18,20),   Sidebar=Color3.fromRGB(20,20,22),   Card=Color3.fromRGB(26,26,30),   Hover=Color3.fromRGB(34,34,38),   Line=Color3.fromRGB(42,42,46),   Accent=Color3.fromRGB(200,200,210), Accent2=Color3.fromRGB(150,150,165) },
+    Teal     = { Bg=Color3.fromRGB(8,18,18),    Panel=Color3.fromRGB(12,24,24),   Sidebar=Color3.fromRGB(14,26,26),   Card=Color3.fromRGB(18,36,34),   Hover=Color3.fromRGB(26,50,46),   Line=Color3.fromRGB(32,62,56),   Accent=Color3.fromRGB(80,235,185),  Accent2=Color3.fromRGB(40,190,150) },
+    Novoline = { Bg=Color3.fromRGB(13,13,17),   Panel=Color3.fromRGB(16,16,22),   Sidebar=Color3.fromRGB(18,18,24),   Card=Color3.fromRGB(22,22,30),   Hover=Color3.fromRGB(30,30,40),   Line=Color3.fromRGB(38,38,48),   Accent=Color3.fromRGB(167,139,250), Accent2=Color3.fromRGB(99,102,241) },
+    Blue     = { Bg=Color3.fromRGB(10,14,22),   Panel=Color3.fromRGB(14,20,30),   Sidebar=Color3.fromRGB(16,22,34),   Card=Color3.fromRGB(20,28,42),   Hover=Color3.fromRGB(28,38,56),   Line=Color3.fromRGB(34,46,66),   Accent=Color3.fromRGB(80,160,255),  Accent2=Color3.fromRGB(50,110,220) },
+    Red      = { Bg=Color3.fromRGB(18,10,12),   Panel=Color3.fromRGB(24,14,18),   Sidebar=Color3.fromRGB(26,16,20),   Card=Color3.fromRGB(36,20,26),   Hover=Color3.fromRGB(48,28,34),   Line=Color3.fromRGB(58,34,42),   Accent=Color3.fromRGB(255,90,110),  Accent2=Color3.fromRGB(210,50,70) },
+    Violet   = { Bg=Color3.fromRGB(16,10,26),   Panel=Color3.fromRGB(22,14,36),   Sidebar=Color3.fromRGB(24,16,38),   Card=Color3.fromRGB(32,22,48),   Hover=Color3.fromRGB(44,30,62),   Line=Color3.fromRGB(54,38,76),   Accent=Color3.fromRGB(190,130,255), Accent2=Color3.fromRGB(140,80,230) },
+    Pink     = { Bg=Color3.fromRGB(20,10,16),   Panel=Color3.fromRGB(28,14,22),   Sidebar=Color3.fromRGB(30,16,24),   Card=Color3.fromRGB(42,22,32),   Hover=Color3.fromRGB(56,30,42),   Line=Color3.fromRGB(68,38,52),   Accent=Color3.fromRGB(255,130,190), Accent2=Color3.fromRGB(230,80,150) },
+    Green    = { Bg=Color3.fromRGB(10,18,12),   Panel=Color3.fromRGB(14,24,16),   Sidebar=Color3.fromRGB(16,26,18),   Card=Color3.fromRGB(22,36,26),   Hover=Color3.fromRGB(30,48,34),   Line=Color3.fromRGB(36,58,40),   Accent=Color3.fromRGB(120,220,150), Accent2=Color3.fromRGB(70,180,110) },
+    Cyan     = { Bg=Color3.fromRGB(8,16,20),    Panel=Color3.fromRGB(12,22,28),   Sidebar=Color3.fromRGB(14,24,30),   Card=Color3.fromRGB(18,34,42),   Hover=Color3.fromRGB(26,46,56),   Line=Color3.fromRGB(32,56,68),   Accent=Color3.fromRGB(80,220,240),  Accent2=Color3.fromRGB(50,170,200) },
+    Orange   = { Bg=Color3.fromRGB(20,12,6),    Panel=Color3.fromRGB(28,18,10),   Sidebar=Color3.fromRGB(30,20,12),   Card=Color3.fromRGB(42,26,16),   Hover=Color3.fromRGB(56,36,22),   Line=Color3.fromRGB(68,44,28),   Accent=Color3.fromRGB(255,150,70),  Accent2=Color3.fromRGB(230,110,40) },
+    Dark     = { Bg=Color3.fromRGB(6,6,8),      Panel=Color3.fromRGB(10,10,14),   Sidebar=Color3.fromRGB(12,12,16),   Card=Color3.fromRGB(18,18,24),   Hover=Color3.fromRGB(26,26,34),   Line=Color3.fromRGB(34,34,42),   Accent=Color3.fromRGB(230,230,240), Accent2=Color3.fromRGB(180,180,200) },
+}
+local PRESET_ORDER = {"Gray","Teal","Novoline","Blue","Red","Violet","Pink","Green","Cyan","Orange","Dark"}
+
+-- Apple "Liquid Glass" palette
+local GLASS_T = {
+    Bg=Color3.fromRGB(34,40,58), Panel=Color3.fromRGB(44,50,70), Sidebar=Color3.fromRGB(52,58,80),
+    Card=Color3.fromRGB(235,240,255), Hover=Color3.fromRGB(255,255,255), Line=Color3.fromRGB(255,255,255),
+    Accent=Color3.fromRGB(130,190,255), Accent2=Color3.fromRGB(90,150,255),
+    Text=Color3.fromRGB(255,255,255), Dim=Color3.fromRGB(215,222,240), Muted=Color3.fromRGB(165,172,195),
+}
+
+local ThemeRefs = {}
+local GlassGrads, GlassStrokes = {}, {}
+local Glass = { on=false, clarity=62, blur=16, savedT=nil }
+local UI = { opacity=5, cards={}, n=0, isOpen=false }
+local Fn = {}
+local Wx = {}
+local overlays = {}
+local Keybinds = {}
+local ToggleReg, SliderReg = {}, {}
+local FILE_OK = (typeof(writefile)=="function" and typeof(readfile)=="function")
+
+local feat = {
+    fly=false, flySpeed=55, flyAccel=12, flyDamping=10, flyVerticalBoost=1.3, flyPitchAmount=0.85,
+    noclip=false, infJump=false,
+    walkSpeed=16, jumpPower=50, freeCam=false, freeCamSpeed=60, fullbright=false,
+    glow=false, trail=false, rainbowTrail=false, neon=false,
+    sparkle=false, fire=false,
+    jumpRing=false, landRing=false, halo=false, wings=false,
+    rain=false, snow=false, fog=false, fogDensity=0.35, thunder=false, fireflies=false,
+    cubes=false, cubeCount=6, cubeRadius=4.5, cubeSpeed=1.2, ambient=false,
+    ghost=false, ghostInterval=0.12,
+    tint=false, tintStrength=60, bloom=false, vignette=false,
+}
+
+local Music = { playing=false, volume=0.5, looped=true, id=nil, name="Nothing playing", artist="" }
+local Lyrics = { lines={}, offset=0, auto=true, key=nil }
+local Lib = { list={}, file="shyclient_music.json" }
+
+local req = (typeof(request)=="function" and request)
+    or (typeof(http_request)=="function" and http_request)
+    or (typeof(syn)=="table" and syn.request)
+    or (typeof(http)=="table" and http.request)
+    or (typeof(fluxus)=="table" and fluxus.request)
+    or nil
+
+-- ══════════════════════════════════════════════════════════════
+-- HELPERS
+-- ══════════════════════════════════════════════════════════════
+local RB, RM, RS_ = 14, 10, 7
+local EFFECT_COLOR = Color3.fromRGB(100, 200, 255)
+local ON_ACCENT = Color3.fromRGB(30, 30, 35)
+
+local function regRef(i, p, k) ThemeRefs[#ThemeRefs+1] = {inst=i, prop=p, key=k} end
+local function applyTheme()
+    local keep = {}
+    for _, r in ipairs(ThemeRefs) do
+        if r.inst and r.inst:IsDescendantOf(game) then
+            keep[#keep+1] = r
+            local v = T[r.key]; if v then pcall(function() r.inst[r.prop] = v end) end
+        end
+    end
+    ThemeRefs = keep
+end
+
+local function new(c, p) local i = Instance.new(c); for k, v in pairs(p or {}) do i[k] = v end; return i end
+local function corner(i, r) local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r or RS_); c.Parent = i; return c end
+local function gradient(i, c1, c2, rot)
+    local g = Instance.new("UIGradient")
+    g.Color = ColorSequence.new(c1, c2)
+    g.Rotation = rot or 0
+    g.Parent = i
+    return g
+end
+local function tween(o, t, p) local x = TS:Create(o, TweenInfo.new(t, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), p); x:Play(); return x end
+local function hexToColor(h)
+    h = tostring(h or ""):gsub("#", ""):gsub("%s", "")
+    if #h ~= 6 or not h:match("^%x%x%x%x%x%x$") then return nil end
+    return Color3.fromRGB(tonumber(h:sub(1,2),16), tonumber(h:sub(3,4),16), tonumber(h:sub(5,6),16))
+end
+local function colorToHex(c)
+    return string.format("#%02X%02X%02X", math.floor(c.R*255+0.5), math.floor(c.G*255+0.5), math.floor(c.B*255+0.5))
+end
+
+local function stroke(p, t, tr, c, skip)
+    local s = Instance.new("UIStroke")
+    s.Color = c or T.Line; s.Thickness = t or 1; s.Transparency = tr or 0.6
+    s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    s.Parent = p
+    if not skip then
+        if not c or c == T.Line then regRef(s, "Color", "Line") end
+        local g = Instance.new("UIGradient")
+        g.Rotation = 45
+        g.Transparency = NumberSequence.new({
+            NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.35, 0.8),
+            NumberSequenceKeypoint.new(0.65, 0.8), NumberSequenceKeypoint.new(1, 0.05),
+        })
+        g.Enabled = Glass.on
+        g.Parent = s
+        GlassStrokes[#GlassStrokes+1] = { s=s, g=g, o=s.Transparency }
+        if Glass.on then s.Transparency = 0.2 end
+    end
+    return s
+end
+
+local function addSheen(f)
+    local g = Instance.new("UIGradient")
+    g.Name = "ShyGlass"
+    g.Rotation = 35
+    g.Color = ColorSequence.new(Color3.fromRGB(255,255,255), Color3.fromRGB(205,218,245))
+    g.Transparency = NumberSequence.new({
+        NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.5, 0.12), NumberSequenceKeypoint.new(1, 0.3),
+    })
+    g.Enabled = Glass.on
+    g.Parent = f
+    GlassGrads[#GlassGrads+1] = g
+end
+
+local function prune()
+    local c = {}
+    for _, f in ipairs(UI.cards) do if f:IsDescendantOf(game) then c[#c+1] = f end end
+    UI.cards = c
+    local g = {}
+    for _, x in ipairs(GlassGrads) do if x:IsDescendantOf(game) then g[#g+1] = x end end
+    GlassGrads = g
+    local s = {}
+    for _, e in ipairs(GlassStrokes) do if e.s:IsDescendantOf(game) then s[#s+1] = e end end
+    GlassStrokes = s
+end
+
+local function regCard(f)
+    table.insert(UI.cards, f)
+    addSheen(f)
+    UI.n += 1
+    if UI.n % 200 == 0 then prune() end
+end
+
+local function drag(f, h)
+    h = h or f
+    local d, s, sp
+    h.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then d = true; s = i.Position; sp = f.Position end end)
+    UIS.InputChanged:Connect(function(i)
+        if d and i.UserInputType == Enum.UserInputType.MouseMovement then
+            local dd = i.Position - s
+            f.Position = UDim2.new(sp.X.Scale, sp.X.Offset + dd.X, sp.Y.Scale, sp.Y.Offset + dd.Y)
+        end
+    end)
+    UIS.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then d = false end end)
+end
+
+local glassBlur = new("BlurEffect", {Name="ShyGlassBlur", Size=0, Parent=Lighting})
+
+-- ══════════════════════════════════════════════════════════════
+-- NOTIFICATIONS
+-- ══════════════════════════════════════════════════════════════
+local notify
+do
+    local notifyGui = new("ScreenGui", {Name="ShyNotify",ResetOnSpawn=false,IgnoreGuiInset=true,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,Parent=pg})
+    local holder = new("Frame", {Size=UDim2.new(0,280,0.6,0),Position=UDim2.new(1,-300,0,20),BackgroundTransparency=1,Parent=notifyGui})
+    new("UIListLayout", {Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder,Parent=holder})
+    local order = 0
+
+    notify = function(title, msg, good)
+        order += 1
+        local wrap = new("Frame", {Size=UDim2.new(1,0,0,56),BackgroundTransparency=1,LayoutOrder=order,Parent=holder})
+        local c = new("Frame", {
+            Size = UDim2.new(1, 0, 1, 0), Position = UDim2.new(0, 46, 0, 0),
+            BackgroundColor3 = T.Card, BackgroundTransparency = 1, BorderSizePixel = 0, Parent = wrap,
+        })
+        corner(c, RM); stroke(c, 1, 0.7, T.Line, true)
+        local bad = (good == false)
+        local bar = new("Frame", {
+            Size = UDim2.new(0, 3, 1, -16), Position = UDim2.new(0, 6, 0, 8),
+            BackgroundColor3 = (bad and T.Bad or T.Accent), BorderSizePixel = 0, Parent = c
+        })
+        corner(bar, 2)
+        gradient(bar, (bad and T.Bad or T.Accent), (bad and T.Bad or T.Accent2), 90)
+        local titleLbl = new("TextLabel", {
+            BackgroundTransparency = 1, Position = UDim2.new(0, 18, 0, 10), Size = UDim2.new(1, -24, 0, 16),
+            Font = Enum.Font.GothamBold, Text = title, TextColor3 = T.Text, TextSize = 12,
+            TextTransparency = 1, TextXAlignment = Enum.TextXAlignment.Left, Parent = c
+        })
+        local msgLbl = new("TextLabel", {
+            BackgroundTransparency = 1, Position = UDim2.new(0, 18, 0, 28), Size = UDim2.new(1, -24, 0, 20),
+            Font = Enum.Font.Gotham, Text = msg, TextColor3 = T.Dim, TextSize = 11,
+            TextTransparency = 1, TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd, Parent = c
+        })
+        tween(c, 0.3, {BackgroundTransparency = TR.Notify, Position = UDim2.new(0, 0, 0, 0)})
+        tween(titleLbl, 0.3, {TextTransparency = 0})
+        tween(msgLbl, 0.3, {TextTransparency = 0})
+        task.delay(2.8, function()
+            tween(c, 0.22, {BackgroundTransparency = 1, Position = UDim2.new(0, 46, 0, 0)})
+            tween(titleLbl, 0.22, {TextTransparency = 1})
+            tween(msgLbl, 0.22, {TextTransparency = 1})
+            task.wait(0.26)
+            wrap:Destroy()
+        end)
+    end
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- KEYBINDS
+-- ══════════════════════════════════════════════════════════════
+local openKeyPrompt
+do
+    local promptGui = new("ScreenGui", {Name="ShyPrompt",ResetOnSpawn=false,IgnoreGuiInset=true,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,Parent=pg})
+
+    openKeyPrompt = function(name)
+        for _, c in ipairs(promptGui:GetChildren()) do c:Destroy() end
+        local bg = new("Frame", {Size=UDim2.new(1,0,1,0),BackgroundColor3=Color3.fromRGB(0,0,0),BackgroundTransparency=0.5,BorderSizePixel=0,ZIndex=100,Parent=promptGui})
+        local box = new("Frame", {Size=UDim2.new(0,340,0,120),Position=UDim2.new(0.5,-170,0.5,-60),BackgroundColor3=T.Panel,BackgroundTransparency=0.05,BorderSizePixel=0,ZIndex=101,Parent=bg})
+        corner(box, RB); stroke(box, 1, 0.5, T.Line, true)
+        local stripe = new("Frame",{Size=UDim2.new(1,0,0,3),BackgroundColor3=T.Accent,BorderSizePixel=0,ZIndex=102,Parent=box})
+        corner(stripe, RB); gradient(stripe, T.Accent, T.Accent2, 0)
+        new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,20),Size=UDim2.new(1,0,0,22),Font=Enum.Font.GothamBold,Text="PRESS A KEY",TextColor3=T.Text,TextSize=14,ZIndex=102,Parent=box})
+        new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,48),Size=UDim2.new(1,0,0,18),Font=Enum.Font.GothamMedium,Text=name,TextColor3=T.Accent,TextSize=12,ZIndex=102,Parent=box})
+        new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,78),Size=UDim2.new(1,0,0,16),Font=Enum.Font.Gotham,Text="ESC cancel  •  BACKSPACE clear",TextColor3=T.Muted,TextSize=10,ZIndex=102,Parent=box})
+        local cn
+        cn = UIS.InputBegan:Connect(function(i, gp)
+            if i.KeyCode == Enum.KeyCode.Escape then cn:Disconnect(); bg:Destroy()
+            elseif i.KeyCode == Enum.KeyCode.Backspace then
+                if Keybinds[name] then Keybinds[name].key = nil end
+                cn:Disconnect(); bg:Destroy(); notify("Keybind", name.." cleared")
+            elseif not gp and i.KeyCode ~= Enum.KeyCode.Unknown then
+                if Keybinds[name] then Keybinds[name].key = i.KeyCode end
+                cn:Disconnect(); bg:Destroy(); notify("Keybind", name.." → "..i.KeyCode.Name)
+            end
+        end)
+    end
+
+    UIS.InputBegan:Connect(function(i, gp)
+        if gp then return end
+        if i.KeyCode == Enum.KeyCode.RightShift then return end
+        for _, k in pairs(Keybinds) do
+            if k.key and i.KeyCode == k.key then
+                if k.isToggle then k.setState(not k.getState())
+                elseif k.fire then pcall(k.fire) end
+                break
+            end
+        end
+    end)
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- FLY / NOCLIP / INFJUMP
+-- ══════════════════════════════════════════════════════════════
+do
+    local flyBV, flyVel = nil, Vector3.zero
+
+    Fn.startFly = function()
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then notify("Fly", "Character not ready", false); return end
+        feat.fly = true
+        flyVel = Vector3.zero
+        if flyBV then flyBV:Destroy() end
+        flyBV = new("BodyVelocity", {MaxForce=Vector3.new(1e5,1e5,1e5), Velocity=Vector3.zero, P=1250, Parent=hrp})
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.PlatformStand = true end
+        notify("Fly", "ON")
+    end
+
+    Fn.stopFly = function()
+        feat.fly = false
+        if flyBV then flyBV:Destroy(); flyBV = nil end
+        local char = player.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.PlatformStand = false end
+        flyVel = Vector3.zero
+        notify("Fly", "OFF", false)
+    end
+
+    player.CharacterAdded:Connect(function()
+        if feat.fly then task.wait(0.5); Fn.startFly() end
+    end)
+
+    RS.Heartbeat:Connect(function(dt)
+        if not flyBV then return end
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then flyBV:Destroy(); flyBV = nil; return end
+        if flyBV.Parent ~= hrp then flyBV.Parent = hrp end
+        local cf = camera.CFrame
+        local camLook = cf.LookVector
+        if camLook.Magnitude > 0.01 then
+            camLook = camLook.Unit
+            local clamped = Vector3.new(camLook.X, math.clamp(camLook.Y, -feat.flyPitchAmount, feat.flyPitchAmount), camLook.Z)
+            if clamped.Magnitude > 0.01 then
+                clamped = clamped.Unit
+                hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + clamped)
+            end
+        end
+        local look, right = cf.LookVector, cf.RightVector
+        local input = Vector3.zero
+        if UIS:IsKeyDown(Enum.KeyCode.W) then input += look end
+        if UIS:IsKeyDown(Enum.KeyCode.S) then input -= look end
+        if UIS:IsKeyDown(Enum.KeyCode.A) then input -= right end
+        if UIS:IsKeyDown(Enum.KeyCode.D) then input += right end
+        if UIS:IsKeyDown(Enum.KeyCode.Space) then input += Vector3.new(0,1,0) * feat.flyVerticalBoost end
+        if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then input -= Vector3.new(0,1,0) * feat.flyVerticalBoost end
+        if input.Magnitude > 1 then input = input.Unit end
+        local targetVel = input * feat.flySpeed
+        local rate = (input.Magnitude > 0.05) and feat.flyAccel or feat.flyDamping
+        flyVel = flyVel:Lerp(targetVel, math.clamp(rate * dt, 0, 1))
+        flyBV.Velocity = flyVel
+    end)
+
+    RS.Stepped:Connect(function()
+        if not feat.noclip then return end
+        local c = player.Character; if not c then return end
+        for _, p in ipairs(c:GetDescendants()) do
+            if p:IsA("BasePart") and p.CanCollide then p.CanCollide = false end
+        end
+    end)
+
+    UIS.JumpRequest:Connect(function()
+        if feat.infJump then
+            local h = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+            if h then h:ChangeState(Enum.HumanoidStateType.Jumping) end
+        end
+    end)
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- FREE CAM
+-- ══════════════════════════════════════════════════════════════
+do
+    local fcConn, fcYaw, fcPitch = nil, 0, 0
+    local fcPos = Vector3.new(0,0,0)
+    local fcSaved = { anchored=false, walkSpeed=16, jumpPower=50 }
+
+    local function freezePlayer()
+        local char = player.Character; if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hrp then
+            fcSaved.anchored = hrp.Anchored
+            hrp.AssemblyLinearVelocity = Vector3.zero
+            hrp.AssemblyAngularVelocity = Vector3.zero
+            hrp.Anchored = true
+        end
+        if hum then
+            fcSaved.walkSpeed = hum.WalkSpeed
+            fcSaved.jumpPower = hum.JumpPower
+            hum.WalkSpeed = 0
+            hum.JumpPower = 0
+            hum.AutoRotate = false
+        end
+    end
+
+    local function unfreezePlayer()
+        local char = player.Character; if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hrp then hrp.Anchored = fcSaved.anchored end
+        if hum then
+            hum.WalkSpeed = feat.walkSpeed or fcSaved.walkSpeed
+            hum.JumpPower = feat.jumpPower or fcSaved.jumpPower
+            hum.AutoRotate = true
+        end
+    end
+
+    Fn.startFreeCam = function()
+        local kb = Keybinds["FreeCam"]
+        if not (kb and kb.key) then
+            notify("Free Cam", "Set a keybind first to enable Free Cam", false)
+            return false
+        end
+        local x, y = camera.CFrame:ToEulerAnglesYXZ(); fcYaw, fcPitch = y, x
+        fcPos = camera.CFrame.Position
+        camera.CameraType = Enum.CameraType.Scriptable
+        feat.freeCam = true
+        UIS.MouseBehavior = Enum.MouseBehavior.LockCenter
+        freezePlayer()
+        fcConn = RS.RenderStepped:Connect(function(dt)
+            local d = Vector3.zero
+            local cf = CFrame.new(fcPos) * CFrame.Angles(0, fcYaw, 0)
+            if UIS:IsKeyDown(Enum.KeyCode.W) then d += cf.LookVector end
+            if UIS:IsKeyDown(Enum.KeyCode.S) then d -= cf.LookVector end
+            if UIS:IsKeyDown(Enum.KeyCode.A) then d -= cf.RightVector end
+            if UIS:IsKeyDown(Enum.KeyCode.D) then d += cf.RightVector end
+            if UIS:IsKeyDown(Enum.KeyCode.Space) then d += Vector3.new(0,1,0) end
+            if UIS:IsKeyDown(Enum.KeyCode.LeftControl) then d -= Vector3.new(0,1,0) end
+            if d.Magnitude > 0 then fcPos += d.Unit * feat.freeCamSpeed * dt end
+            camera.CFrame = CFrame.new(fcPos) * CFrame.Angles(0, fcYaw, 0) * CFrame.Angles(fcPitch, 0, 0)
+        end)
+        notify("Free Cam", "ON — press your keybind to exit")
+        return true
+    end
+
+    Fn.stopFreeCam = function()
+        feat.freeCam = false
+        if fcConn then fcConn:Disconnect(); fcConn = nil end
+        camera.CameraType = Enum.CameraType.Custom
+        UIS.MouseBehavior = Enum.MouseBehavior.Default
+        unfreezePlayer()
+        notify("Free Cam", "OFF", false)
+    end
+
+    UIS.InputChanged:Connect(function(i)
+        if not fcConn then return end
+        if i.UserInputType == Enum.UserInputType.MouseMovement then
+            fcYaw = fcYaw - math.rad(i.Delta.X) * 1.5
+            fcPitch = math.clamp(fcPitch - math.rad(i.Delta.Y) * 1.5, math.rad(-89), math.rad(89))
+        end
+    end)
+
+    player.CharacterAdded:Connect(function()
+        if feat.freeCam then
+            task.wait(0.6)
+            if feat.freeCam then freezePlayer() end
+        end
+    end)
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- VFX (body effects)
+-- ══════════════════════════════════════════════════════════════
+do
+    local vfxObj = {}
+    local function clearVfx()
+        for _, o in pairs(vfxObj) do
+            if typeof(o) == "Instance" then pcall(function() o:Destroy() end)
+            elseif typeof(o) == "RBXScriptConnection" then pcall(function() o:Disconnect() end) end
+        end
+        vfxObj = {}
+    end
+    local function ring(pos, col, sz)
+        local p = new("Part",{Anchored=true,CanCollide=false,CanQuery=false,CanTouch=false,CastShadow=false,Shape=Enum.PartType.Cylinder,Size=Vector3.new(0.3,sz,sz),CFrame=CFrame.new(pos)*CFrame.Angles(0,0,math.rad(90)),Material=Enum.Material.Neon,Color=col,Transparency=0.15,Parent=workspace})
+        local t = TS:Create(p,TweenInfo.new(0.7,Enum.EasingStyle.Quint),{Size=Vector3.new(0.1,sz*4,sz*4),Transparency=1})
+        t:Play(); t.Completed:Connect(function() p:Destroy() end)
+    end
+
+    Fn.rebuildVFX = function()
+        clearVfx()
+        local char = player.Character; if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if not hrp or not hum then return end
+        local EC = EFFECT_COLOR
+        if feat.glow then
+            vfxObj.g1 = new("Highlight",{FillColor=EC,FillTransparency=0.5,OutlineColor=EC,OutlineTransparency=0,Parent=char})
+            vfxObj.g2 = new("PointLight",{Color=EC,Range=20,Brightness=3,Parent=hrp})
+        end
+        if feat.neon then for _, p in ipairs(char:GetDescendants()) do if p:IsA("BasePart") then p.Material = Enum.Material.Neon end end end
+        if feat.trail then
+            local a0 = new("Attachment",{Position=Vector3.new(0,0.6,0),Parent=hrp})
+            local a1 = new("Attachment",{Position=Vector3.new(0,-0.6,0),Parent=hrp})
+            vfxObj.trail = new("Trail",{Attachment0=a0,Attachment1=a1,Lifetime=1.2,LightEmission=1,Color=ColorSequence.new(EC),Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0.15),NumberSequenceKeypoint.new(1,1)}),WidthScale=NumberSequence.new({NumberSequenceKeypoint.new(0,1),NumberSequenceKeypoint.new(1,0)}),Parent=hrp})
+            vfxObj.trailA0, vfxObj.trailA1 = a0, a1
+        end
+        if feat.rainbowTrail then
+            local a0 = new("Attachment",{Position=Vector3.new(0,0.7,0),Parent=hrp})
+            local a1 = new("Attachment",{Position=Vector3.new(0,-0.7,0),Parent=hrp})
+            local tr = new("Trail",{Attachment0=a0,Attachment1=a1,Lifetime=1.5,LightEmission=1,Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0.1),NumberSequenceKeypoint.new(1,1)}),WidthScale=NumberSequence.new({NumberSequenceKeypoint.new(0,1.2),NumberSequenceKeypoint.new(1,0)}),Parent=hrp})
+            vfxObj.rbc = RS.RenderStepped:Connect(function() tr.Color = ColorSequence.new(Color3.fromHSV((tick()*0.6)%1,1,1)) end)
+            vfxObj.rbA0, vfxObj.rbA1, vfxObj.rbT = a0, a1, tr
+        end
+        if feat.fire then
+            vfxObj.fire = new("ParticleEmitter",{Texture="rbxassetid://243098098",Rate=60,Lifetime=NumberRange.new(0.5,1),Speed=NumberRange.new(3,6),SpreadAngle=Vector2.new(15,15),Color=ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Color3.new(math.min(EC.R+0.3,1),math.min(EC.G+0.3,1),math.min(EC.B+0.3,1))),
+                ColorSequenceKeypoint.new(0.4, EC),
+                ColorSequenceKeypoint.new(1, Color3.new(EC.R*0.3,EC.G*0.3,EC.B*0.3)),
+            }),Size=NumberSequence.new({NumberSequenceKeypoint.new(0,1),NumberSequenceKeypoint.new(1,0)}),Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0.1),NumberSequenceKeypoint.new(1,1)}),LightEmission=1,Parent=hrp})
+            vfxObj.fireL = new("PointLight",{Color=EC,Range=18,Brightness=4,Parent=hrp})
+        end
+        if feat.sparkle then
+            vfxObj.sparkle = new("ParticleEmitter",{Texture="rbxassetid://243098098",Rate=25,Lifetime=NumberRange.new(1.2,2.2),Speed=NumberRange.new(0,0.5),SpreadAngle=Vector2.new(180,180),Color=ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(255,255,255)),ColorSequenceKeypoint.new(1,EC)}),Size=NumberSequence.new({NumberSequenceKeypoint.new(0,0.3),NumberSequenceKeypoint.new(0.4,0.7),NumberSequenceKeypoint.new(1,0)}),Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,0),NumberSequenceKeypoint.new(1,1)}),LightEmission=1,Rotation=NumberRange.new(0,360),RotSpeed=NumberRange.new(-50,50),Parent=hrp})
+        end
+        if feat.halo then
+            local h = new("Part",{Anchored=false,CanCollide=false,CanQuery=false,CanTouch=false,Shape=Enum.PartType.Cylinder,Size=Vector3.new(0.2,2.5,2.5),Material=Enum.Material.Neon,Color=EC,Transparency=0.2,Massless=true,Parent=hrp})
+            new("WeldConstraint",{Part0=hrp,Part1=h,Parent=h})
+            h.CFrame = hrp.CFrame * CFrame.new(0,4,0) * CFrame.Angles(0,0,math.rad(90))
+            vfxObj.haloC = RS.RenderStepped:Connect(function()
+                if h.Parent then h.CFrame = hrp.CFrame * CFrame.new(0,4,0) * CFrame.Angles(0,0,math.rad(90)) end
+            end)
+            vfxObj.halo = h
+        end
+        if feat.wings then
+            local l = new("Part",{Anchored=false,CanCollide=false,CanQuery=false,CanTouch=false,Size=Vector3.new(0.1,3,5),Material=Enum.Material.Neon,Color=EC,Transparency=0.3,Massless=true,Parent=hrp})
+            new("WeldConstraint",{Part0=hrp,Part1=l,Parent=l})
+            l.CFrame = hrp.CFrame * CFrame.new(-1.5,1,1)
+            local r = new("Part",{Anchored=false,CanCollide=false,CanQuery=false,CanTouch=false,Size=Vector3.new(0.1,3,5),Material=Enum.Material.Neon,Color=EC,Transparency=0.3,Massless=true,Parent=hrp})
+            new("WeldConstraint",{Part0=hrp,Part1=r,Parent=r})
+            r.CFrame = hrp.CFrame * CFrame.new(1.5,1,1)
+            vfxObj.wingL, vfxObj.wingR = l, r
+        end
+        if feat.jumpRing then
+            vfxObj.jr = hum.StateChanged:Connect(function(_, ns)
+                if ns == Enum.HumanoidStateType.Jumping then
+                    local h = char:FindFirstChild("HumanoidRootPart"); if not h then return end
+                    ring(h.Position - Vector3.new(0,2.5,0), EC, 4)
+                end
+            end)
+        end
+        if feat.landRing then
+            local wasAir = false
+            vfxObj.lr = hum.StateChanged:Connect(function(_, ns)
+                if ns == Enum.HumanoidStateType.Freefall then wasAir = true
+                elseif ns == Enum.HumanoidStateType.Landed and wasAir then
+                    wasAir = false
+                    local h = char:FindFirstChild("HumanoidRootPart"); if not h then return end
+                    ring(h.Position - Vector3.new(0,2.5,0), EC, 5)
+                end
+            end)
+        end
+    end
+
+    if player.Character then task.spawn(Fn.rebuildVFX) end
+    player.CharacterAdded:Connect(function() task.wait(0.5); Fn.rebuildVFX() end)
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- LIGHTING
+-- ══════════════════════════════════════════════════════════════
+do
+    local savedLight = nil
+    Fn.saveLight = function()
+        if savedLight then return end
+        savedLight = {ClockTime=Lighting.ClockTime,Brightness=Lighting.Brightness,Ambient=Lighting.Ambient,OutdoorAmbient=Lighting.OutdoorAmbient,FogColor=Lighting.FogColor,FogStart=Lighting.FogStart,FogEnd=Lighting.FogEnd,GlobalShadows=Lighting.GlobalShadows}
+    end
+    Fn.applyFB = function()
+        if feat.fullbright then
+            Lighting.Ambient = Color3.fromRGB(255,255,255); Lighting.OutdoorAmbient = Color3.fromRGB(255,255,255)
+            Lighting.Brightness = 3; Lighting.GlobalShadows = false
+        else
+            Lighting.Ambient = Color3.fromRGB(70,70,70); Lighting.OutdoorAmbient = Color3.fromRGB(128,128,128)
+            Lighting.Brightness = 2; Lighting.GlobalShadows = true
+        end
+    end
+    Fn.setDay = function()
+        Fn.saveLight(); TS:Create(Lighting,TweenInfo.new(0.5),{ClockTime=12,Brightness=2}):Play()
+        Lighting.Ambient = Color3.fromRGB(90,90,90); Lighting.OutdoorAmbient = Color3.fromRGB(130,130,130)
+        Lighting.FogColor = Color3.fromRGB(192,192,192); Lighting.FogEnd = 1e5; Lighting.GlobalShadows = true
+        notify("Time","Day")
+    end
+    Fn.setNight = function()
+        Fn.saveLight(); TS:Create(Lighting,TweenInfo.new(0.5),{ClockTime=0,Brightness=0.5}):Play()
+        Lighting.Ambient = Color3.fromRGB(20,25,45); Lighting.OutdoorAmbient = Color3.fromRGB(40,50,80)
+        Lighting.FogColor = Color3.fromRGB(15,20,35); Lighting.FogEnd = 400; Lighting.GlobalShadows = true
+        notify("Time","Night")
+    end
+    Fn.setSunset = function()
+        Fn.saveLight(); TS:Create(Lighting,TweenInfo.new(0.5),{ClockTime=17.5,Brightness=2}):Play()
+        Lighting.Ambient = Color3.fromRGB(110,70,50); Lighting.OutdoorAmbient = Color3.fromRGB(200,120,80)
+        Lighting.FogColor = Color3.fromRGB(255,150,100); Lighting.FogEnd = 600; Lighting.GlobalShadows = true
+        notify("Time","Sunset")
+    end
+    Fn.restoreLight = function()
+        if not savedLight then notify("Time","Nothing to restore",false); return end
+        TS:Create(Lighting,TweenInfo.new(0.5),{ClockTime=savedLight.ClockTime,Brightness=savedLight.Brightness}):Play()
+        Lighting.Ambient=savedLight.Ambient; Lighting.OutdoorAmbient=savedLight.OutdoorAmbient
+        Lighting.FogColor=savedLight.FogColor; Lighting.FogStart=savedLight.FogStart
+        Lighting.FogEnd=savedLight.FogEnd; Lighting.GlobalShadows=savedLight.GlobalShadows
+        notify("Time","Restored",false)
+    end
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- OVERLAYS / HUD  (status bar, fps, ping, coords, speed, keybinds, music HUD, lyrics bar)
+-- ══════════════════════════════════════════════════════════════
+do
+    local ovGui = new("ScreenGui", {Name="ShyOverlays",ResetOnSpawn=false,IgnoreGuiInset=true,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,Parent=pg})
+    UI.ovGui = ovGui
+    UI.defaultPos = {}
+
+    local function mkOv(name, sz, pos)
+        local f = new("Frame",{Size=sz,Position=pos,BackgroundColor3=T.Card,BackgroundTransparency=TR.Overlay,BorderSizePixel=0,Visible=false,Active=true,ZIndex=30,Parent=ovGui})
+        corner(f, RM); stroke(f, 1, 0.6, T.Line); regRef(f, "BackgroundColor3", "Card"); addSheen(f); drag(f)
+        overlays[name] = f
+        UI.defaultPos[name] = pos
+        return f
+    end
+
+    mkOv("statusBar", UDim2.new(0,560,0,42),  UDim2.new(0.5,-280,1,-110))
+    mkOv("fps",       UDim2.new(0,110,0,34),  UDim2.new(1,-130,0,14))
+    mkOv("coords",    UDim2.new(0,214,0,30),  UDim2.new(0.5,-107,0,176))
+    mkOv("ping",      UDim2.new(0,110,0,34),  UDim2.new(1,-130,0,54))
+    mkOv("watermark", UDim2.new(0,150,0,26),  UDim2.new(0,20,0,14))
+    mkOv("keybinds",  UDim2.new(0,190,0,60),  UDim2.new(1,-210,0.5,-60))
+    mkOv("musicHud",  UDim2.new(0,290,0,104), UDim2.new(0.5,-145,0,58))
+    mkOv("speed",     UDim2.new(0,130,0,52),  UDim2.new(0,20,1,-130))
+    mkOv("lyrics",    UDim2.new(0,560,0,38),  UDim2.new(0.5,-280,0,12))
+
+    -- ── status bar
+    do
+        local sb = overlays.statusBar
+        local layout = new("Frame",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Parent=sb})
+        new("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,VerticalAlignment=Enum.VerticalAlignment.Center,Padding=UDim.new(0,10),SortOrder=Enum.SortOrder.LayoutOrder,Parent=layout})
+        new("UIPadding",{PaddingLeft=UDim.new(0,16),PaddingRight=UDim.new(0,16),Parent=layout})
+        local av = new("Frame",{Size=UDim2.new(0,26,0,26),BackgroundColor3=T.Off,BorderSizePixel=0,LayoutOrder=1,Parent=layout})
+        corner(av,13)
+        local avImg = new("ImageLabel",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Image="",Parent=av})
+        corner(avImg,13)
+        task.spawn(function()
+            local ok, thumb = pcall(function() return Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100) end)
+            if ok and thumb then avImg.Image = thumb end
+        end)
+        local nameLbl = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(0,110,0,20),Font=Enum.Font.GothamMedium,Text=player.Name,TextColor3=T.Text,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=2,Parent=layout})
+        new("Frame",{Size=UDim2.new(0,1,0,18),BackgroundColor3=T.Line,BackgroundTransparency=0.4,BorderSizePixel=0,LayoutOrder=3,Parent=layout})
+        local gameLbl = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(0,160,0,20),Font=Enum.Font.GothamMedium,Text=game.Name or "Unknown",TextColor3=T.Text,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,LayoutOrder=4,Parent=layout})
+        new("Frame",{Size=UDim2.new(0,1,0,18),BackgroundColor3=T.Line,BackgroundTransparency=0.4,BorderSizePixel=0,LayoutOrder=5,Parent=layout})
+        local fpsLbl = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(0,64,0,20),Font=Enum.Font.GothamMedium,Text="0 fps",TextColor3=T.Text,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=6,Parent=layout})
+        new("Frame",{Size=UDim2.new(0,1,0,18),BackgroundColor3=T.Line,BackgroundTransparency=0.4,BorderSizePixel=0,LayoutOrder=7,Parent=layout})
+        local timeLbl = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(0,52,0,20),Font=Enum.Font.GothamMedium,Text="00:00",TextColor3=T.Text,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,LayoutOrder=8,Parent=layout})
+        regRef(nameLbl,"TextColor3","Text"); regRef(gameLbl,"TextColor3","Text"); regRef(fpsLbl,"TextColor3","Text"); regRef(timeLbl,"TextColor3","Text")
+
+        local fpsBox = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(1,0,1,0),Font=Enum.Font.GothamBold,Text="0 fps",TextColor3=T.Text,TextSize=13,Parent=overlays.fps})
+        local pingBox = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(1,0,1,0),Font=Enum.Font.GothamBold,Text="0 ms",TextColor3=T.Text,TextSize=13,Parent=overlays.ping})
+        local wm = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(1,0,1,0),Font=Enum.Font.GothamBold,Text="SHY CLIENT",TextColor3=T.Text,TextSize=11,Parent=overlays.watermark})
+        regRef(fpsBox,"TextColor3","Text"); regRef(pingBox,"TextColor3","Text"); regRef(wm,"TextColor3","Text")
+
+        local fps, ping, frames, lastSec = 0, 0, 0, tick()
+        RS.RenderStepped:Connect(function()
+            frames += 1
+            if tick() - lastSec >= 1 then
+                fps = frames; frames = 0; lastSec = tick()
+                local ok, p = pcall(function() return Stats.Network.ServerStatsItem["Data Ping"]:GetValue() end)
+                if ok then ping = math.floor(p) end
+            end
+        end)
+        task.spawn(function()
+            while true do
+                task.wait(0.5)
+                if sb.Visible then
+                    fpsLbl.Text = fps.." fps"; timeLbl.Text = os.date("%H:%M")
+                    nameLbl.Text = player.Name; gameLbl.Text = game.Name or "Unknown"
+                end
+                if overlays.fps.Visible then fpsBox.Text = fps.." fps" end
+                if overlays.ping.Visible then pingBox.Text = ping.." ms" end
+            end
+        end)
+    end
+
+    -- ── coordinates pill + speed widget
+    local coordsLbl, spVal, spBar
+    do
+        local c = overlays.coords
+        local dia = new("Frame",{Size=UDim2.new(0,9,0,9),Position=UDim2.new(0,14,0.5,-4),BackgroundColor3=T.Accent,BorderSizePixel=0,Rotation=45,Parent=c})
+        corner(dia,2); regRef(dia,"BackgroundColor3","Accent")
+        coordsLbl = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,34,0,0),Size=UDim2.new(1,-40,1,0),Font=Enum.Font.GothamMedium,Text="x 0   y 0   z 0",TextColor3=T.Text,TextSize=12,RichText=true,TextXAlignment=Enum.TextXAlignment.Left,Parent=c})
+        regRef(coordsLbl,"TextColor3","Text")
+
+        local s = overlays.speed
+        local ic = new("Frame",{Size=UDim2.new(0,11,0,9),Position=UDim2.new(0,10,0,9),BackgroundColor3=T.Accent,BorderSizePixel=0,Parent=s})
+        corner(ic,3); regRef(ic,"BackgroundColor3","Accent")
+        local st = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,28,0,4),Size=UDim2.new(1,-34,0,18),Font=Enum.Font.GothamBold,Text="Speed",TextColor3=T.Text,TextSize=11,TextXAlignment=Enum.TextXAlignment.Left,Parent=s})
+        regRef(st,"TextColor3","Text")
+        spVal = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,10,0,24),Size=UDim2.new(1,-20,0,14),Font=Enum.Font.Gotham,Text="0,00 bps",TextColor3=T.Dim,TextSize=11,TextXAlignment=Enum.TextXAlignment.Left,Parent=s})
+        regRef(spVal,"TextColor3","Dim")
+        local bg = new("Frame",{Position=UDim2.new(0,10,1,-9),Size=UDim2.new(1,-20,0,2),BackgroundColor3=T.Line,BackgroundTransparency=0.3,BorderSizePixel=0,Parent=s})
+        spBar = new("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.Accent,BorderSizePixel=0,Parent=bg})
+        regRef(spBar,"BackgroundColor3","Accent")
+    end
+
+    -- ── keybind panel
+    local kbList
+    do
+        local kb = overlays.keybinds
+        local ic = new("Frame",{Size=UDim2.new(0,12,0,10),Position=UDim2.new(0,10,0,8),BackgroundColor3=T.Accent,BorderSizePixel=0,Parent=kb})
+        corner(ic,3); regRef(ic,"BackgroundColor3","Accent")
+        local hd = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,28,0,0),Size=UDim2.new(1,-34,0,26),Font=Enum.Font.GothamBold,Text="KeyBinds",TextColor3=T.Text,TextSize=11,TextXAlignment=Enum.TextXAlignment.Left,Parent=kb})
+        regRef(hd,"TextColor3","Text")
+        kbList = new("Frame",{Position=UDim2.new(0,0,0,26),Size=UDim2.new(1,0,1,-26),BackgroundTransparency=1,Parent=kb})
+        new("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,2),Parent=kbList})
+        new("UIPadding",{PaddingLeft=UDim.new(0,10),PaddingRight=UDim.new(0,10),Parent=kbList})
+
+        local SHORT = {RightShift="RShift",LeftShift="LShift",LeftControl="LCtrl",RightControl="RCtrl",LeftAlt="LAlt",RightAlt="RAlt",Backquote="Grave",Return="Enter",Backspace="Bksp"}
+        Fn.refreshKb = function()
+            for _, c in ipairs(kbList:GetChildren()) do if c:IsA("Frame") or c:IsA("TextLabel") then c:Destroy() end end
+            local list = {}
+            for _, k in pairs(Keybinds) do if k.key then list[#list+1] = k end end
+            table.sort(list, function(a, b) return (a.label or "") < (b.label or "") end)
+            if #list == 0 then
+                new("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,Font=Enum.Font.Gotham,Text="No keybinds set",TextColor3=T.Muted,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,Parent=kbList})
+                kb.Size = UDim2.new(0,190,0,56)
+                return
+            end
+            for i, k in ipairs(list) do
+                local active = k.isToggle and k.getState and k.getState()
+                local row = new("Frame",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,LayoutOrder=i,Parent=kbList})
+                new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(1,-50,1,0),Font=Enum.Font.GothamMedium,Text=k.label or "?",TextColor3=active and T.Accent or T.Dim,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,Parent=row})
+                local nm = SHORT[k.key.Name] or k.key.Name
+                local w = math.max(28, #nm * 6 + 12)
+                local chip = new("TextLabel",{Size=UDim2.new(0,w,0,15),Position=UDim2.new(1,-w,0.5,-8),BackgroundColor3=T.Accent:Lerp(T.Bg, 0.75),BorderSizePixel=0,Font=Enum.Font.GothamBold,Text=nm,TextColor3=T.Accent,TextSize=9,Parent=row})
+                corner(chip,4)
+            end
+            kb.Size = UDim2.new(0,190,0,34 + math.min(#list, 14) * 20)
+        end
+
+        task.spawn(function()
+            local last = ""
+            while kb.Parent do
+                local sig = ""
+                for n, k in pairs(Keybinds) do
+                    if k.key then sig = sig..n..k.key.Name..((k.isToggle and k.getState and k.getState()) and "1" or "0").."," end
+                end
+                if sig ~= last then
+                    last = sig
+                    if kb.Visible then Fn.refreshKb() end
+                end
+                task.wait(0.25)
+            end
+        end)
+    end
+
+    -- ── music HUD
+    local mhTitle, mhSub, coverImg, playIcon, pauseIcon, mhFill, mhTrack
+    do
+        local mh = overlays.musicHud
+        local cover = new("Frame",{Size=UDim2.new(0,78,0,78),Position=UDim2.new(0,12,0,13),BackgroundColor3=Color3.fromRGB(255,255,255),BorderSizePixel=0,Parent=mh})
+        corner(cover,10); gradient(cover,T.Accent,T.Accent2,45)
+        new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(1,0,1,0),Font=Enum.Font.GothamBold,Text="♪",TextColor3=ON_ACCENT,TextSize=32,Parent=cover})
+        coverImg = new("ImageLabel",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Image="",ScaleType=Enum.ScaleType.Crop,Parent=cover})
+        corner(coverImg,10)
+
+        mhTitle = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,102,0,12),Size=UDim2.new(1,-114,0,20),Font=Enum.Font.GothamBold,Text="Nothing playing",TextColor3=T.Text,TextSize=14,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,Parent=mh})
+        regRef(mhTitle,"TextColor3","Text")
+        mhSub = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,102,0,32),Size=UDim2.new(1,-114,0,16),Font=Enum.Font.Gotham,Text="Pick a song in the Music tab",TextColor3=T.Dim,TextSize=11,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,Parent=mh})
+        regRef(mhSub,"TextColor3","Dim")
+
+        local function ctrl(x, txt)
+            local b = new("TextButton",{Size=UDim2.new(0,30,0,28),Position=UDim2.new(0,x,0,52),BackgroundTransparency=1,Text=txt,Font=Enum.Font.GothamBold,TextColor3=T.Text,TextSize=20,AutoButtonColor=false,Parent=mh})
+            regRef(b,"TextColor3","Text")
+            return b
+        end
+        local prev = ctrl(122, "‹‹")
+        local play = ctrl(166, "")
+        local nxt  = ctrl(210, "››")
+        playIcon = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(1,0,1,0),Font=Enum.Font.GothamBold,Text="▶",TextColor3=T.Text,TextSize=16,Parent=play})
+        regRef(playIcon,"TextColor3","Text")
+        pauseIcon = new("Frame",{BackgroundTransparency=1,Size=UDim2.new(1,0,1,0),Visible=false,Parent=play})
+        for _, x in ipairs({7, 17}) do
+            local bar = new("Frame",{Size=UDim2.new(0,5,0,14),Position=UDim2.new(0,x,0.5,-7),BackgroundColor3=T.Text,BorderSizePixel=0,Parent=pauseIcon})
+            corner(bar,2); regRef(bar,"BackgroundColor3","Text")
+        end
+        prev.MouseButton1Click:Connect(function() Music.prev() end)
+        play.MouseButton1Click:Connect(function() Music.toggle() end)
+        nxt.MouseButton1Click:Connect(function() Music.next() end)
+
+        mhTrack = new("Frame",{Position=UDim2.new(0,102,0,88),Size=UDim2.new(1,-114,0,4),BackgroundColor3=T.Line,BackgroundTransparency=0.2,BorderSizePixel=0,Parent=mh})
+        corner(mhTrack,2)
+        mhFill = new("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.Accent,BorderSizePixel=0,Parent=mhTrack})
+        corner(mhFill,2); gradient(mhFill,T.Accent,T.Accent2,0)
+        mhTrack.InputBegan:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1 and Music.sound and Music.sound.TimeLength > 0 then
+                local rel = math.clamp((i.Position.X - mhTrack.AbsolutePosition.X) / mhTrack.AbsoluteSize.X, 0, 1)
+                Music.sound.TimePosition = rel * Music.sound.TimeLength
+            end
+        end)
+
+        Fn.updateHud = function()
+            mhTitle.Text = Music.name
+            mhSub.Text = (Music.artist ~= "" and Music.artist) or (Music.id and ("ID "..Music.id)) or "Pick a song in the Music tab"
+            coverImg.Image = Music.id and ("rbxthumb://type=Asset&id="..Music.id.."&w=150&h=150") or ""
+            playIcon.Visible = not Music.playing
+            pauseIcon.Visible = Music.playing
+            if UI.nowLbl then UI.nowLbl.Text = Music.name .. (Music.id and not Music.playing and "  (paused)" or "") end
+        end
+    end
+
+    -- ── lyrics bar
+    local lyLbl
+    do
+        lyLbl = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(1,-24,1,0),Position=UDim2.new(0,12,0,0),Font=Enum.Font.GothamMedium,Text="",RichText=true,TextColor3=T.Text,TextSize=16,TextTruncate=Enum.TextTruncate.AtEnd,Parent=overlays.lyrics})
+    end
+
+    -- ── per-frame updates
+    RS.RenderStepped:Connect(function(dt)
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+        if overlays.coords.Visible and hrp then
+            local p = hrp.Position
+            local dh = colorToHex(T.Dim)
+            coordsLbl.Text = string.format('<font color="%s">x</font> <b>%d</b>   <font color="%s">y</font> <b>%d</b>   <font color="%s">z</font> <b>%d</b>',
+                dh, math.floor(p.X + 0.5), dh, math.floor(p.Y + 0.5), dh, math.floor(p.Z + 0.5))
+        end
+
+        if overlays.speed.Visible then
+            local v = hrp and hrp.AssemblyLinearVelocity or Vector3.zero
+            local target = Vector3.new(v.X, 0, v.Z).Magnitude
+            UI.spd = (UI.spd or 0) + (target - (UI.spd or 0)) * math.min(dt * 10, 1)
+            spVal.Text = (string.format("%.2f", UI.spd):gsub("%.", ",")) .. " bps"
+            spBar.Size = UDim2.new(math.clamp(UI.spd / 60, 0, 1), 0, 1, 0)
+        end
+
+        if overlays.musicHud.Visible then
+            local len = Music.sound.TimeLength
+            mhFill.Size = UDim2.new(len > 0 and math.clamp(Music.sound.TimePosition / len, 0, 1) or 0, 0, 1, 0)
+        end
+
+        if overlays.lyrics.Visible then
+            local lines = Lyrics.lines
+            local n = #lines
+            if n == 0 then
+                if Lyrics.key ~= "none" then
+                    Lyrics.key = "none"
+                    lyLbl.Text = '<font color="'..colorToHex(T.Muted)..'">♪  no lyrics loaded</font>'
+                end
+            else
+                local pos = Music.sound.TimePosition + Lyrics.offset
+                local idx = 0
+                for i = 1, n do if lines[i].t <= pos then idx = i else break end end
+                if idx == 0 then
+                    if Lyrics.key ~= "pre" then Lyrics.key = "pre"; lyLbl.Text = '<font color="'..colorToHex(T.Muted)..'">♪</font>' end
+                else
+                    local L = lines[idx]
+                    local t1 = lines[idx+1] and lines[idx+1].t or (L.t + 4)
+                    local dur = math.clamp(t1 - L.t, 0.5, 6) * 0.85
+                    local f = math.clamp((pos - L.t) / dur, 0, 1)
+                    local widx = #L.words
+                    for i = 1, #L.words do if f <= L.cum[i] then widx = i; break end end
+                    local key = idx * 1000 + widx
+                    if Lyrics.key ~= key then
+                        Lyrics.key = key
+                        local acc, dimc = colorToHex(T.Accent), "#8C93A6"
+                        local parts = {}
+                        for i, w in ipairs(L.words) do
+                            w = w:gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")
+                            if i < widx then parts[#parts+1] = '<font color="#FFFFFF">'..w..'</font>'
+                            elseif i == widx then parts[#parts+1] = '<font color="'..acc..'"><b>'..w..'</b></font>'
+                            else parts[#parts+1] = '<font color="'..dimc..'">'..w..'</font>' end
+                        end
+                        lyLbl.Text = table.concat(parts, " ")
+                    end
+                end
+            end
+        end
+    end)
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- MUSIC + LYRICS ENGINE
+-- ══════════════════════════════════════════════════════════════
+do
+    Music.sound = new("Sound", {Name="ShyMusic", Volume=Music.volume, Looped=true, Parent=SoundService})
+
+    local function cleanName(s)
+        s = tostring(s or "")
+        s = s:gsub("%b()", " ")
+        s = s:gsub("%b[]", " ")
+        s = s:gsub("_", " ")
+        s = s:gsub("%s+", " ")
+        s = s:gsub("^%s+", ""):gsub("%s+$", "")
+        return s
+    end
+
+    -- lyrics -------------------------------------------------
+    local function mkLine(t, text)
+        local words, cum, total = {}, {}, 0
+        for w in text:gmatch("%S+") do words[#words+1] = w; total = total + #w + 1 end
+        local acc = 0
+        for i, w in ipairs(words) do acc = acc + #w + 1; cum[i] = acc / math.max(total, 1) end
+        return { t=t, text=text, words=words, cum=cum }
+    end
+
+    Lyrics.parse = function(raw)
+        local lines, plain, synced = {}, {}, false
+        for ln in tostring(raw):gmatch("[^\r\n]+") do
+            local stamps, rest = {}, ln
+            while true do
+                local mm, ss, ff, nxt = rest:match("^%s*%[(%d+):(%d+)[%.:]?(%d*)%]()")
+                if not mm then break end
+                local frac = (ff ~= "" and tonumber("0."..ff)) or 0
+                stamps[#stamps+1] = tonumber(mm) * 60 + tonumber(ss) + frac
+                rest = rest:sub(nxt)
+            end
+            rest = rest:gsub("<%d+:%d+[%.:]?%d*>", "")
+            rest = rest:gsub("^%s+", ""):gsub("%s+$", "")
+            if #stamps > 0 then
+                synced = true
+                if rest ~= "" then for _, t in ipairs(stamps) do lines[#lines+1] = mkLine(t, rest) end end
+            elseif rest ~= "" and not rest:match("^%[%a+:") then
+                plain[#plain+1] = rest
+            end
+        end
+        if synced then
+            table.sort(lines, function(a, b) return a.t < b.t end)
+            return lines
+        end
+        local total = Music.sound.TimeLength > 0 and Music.sound.TimeLength or 180
+        for i, text in ipairs(plain) do lines[#lines+1] = mkLine((i - 1) * total / math.max(#plain, 1), text) end
+        return lines
+    end
+
+    Lyrics.fetch = function(query, quiet)
+        if not req then
+            if not quiet then notify("Lyrics", "Executor has no HTTP request — paste LRC instead", false) end
+            return
+        end
+        local q = cleanName(query)
+        if q == "" then if not quiet then notify("Lyrics", "Enter artist - song", false) end return end
+        task.spawn(function()
+            if not quiet then notify("Lyrics", "Searching: " .. q) end
+            local ok, res = pcall(req, { Url="https://lrclib.net/api/search?q=" .. HttpService:UrlEncode(q), Method="GET" })
+            if not ok or type(res) ~= "table" or not res.Body then notify("Lyrics", "Request failed", false) return end
+            local ok2, data = pcall(function() return HttpService:JSONDecode(res.Body) end)
+            if not ok2 or type(data) ~= "table" or #data == 0 then notify("Lyrics", "No lyrics found", false) return end
+            local pick
+            for _, it in ipairs(data) do
+                if type(it.syncedLyrics) == "string" and #it.syncedLyrics > 0 then pick = it.syncedLyrics; break end
+            end
+            if not pick then
+                for _, it in ipairs(data) do
+                    if type(it.plainLyrics) == "string" and #it.plainLyrics > 0 then pick = it.plainLyrics; break end
+                end
+            end
+            if not pick then notify("Lyrics", "No lyrics found", false) return end
+            local lines = Lyrics.parse(pick)
+            if #lines == 0 then notify("Lyrics", "Could not read lyrics", false) return end
+            Lyrics.lines = lines; Lyrics.key = nil
+            notify("Lyrics", "Loaded " .. #lines .. " lines")
+        end)
+    end
+
+    Lyrics.loadText = function(text)
+        local lines = Lyrics.parse(text)
+        if #lines == 0 then notify("Lyrics", "Nothing to load", false) return end
+        Lyrics.lines = lines; Lyrics.key = nil
+        notify("Lyrics", "Loaded " .. #lines .. " lines")
+    end
+
+    Lyrics.clear = function() Lyrics.lines = {}; Lyrics.key = nil end
+
+    -- library ------------------------------------------------
+    Lib.save = function()
+        if not FILE_OK then return end
+        local ok, e = pcall(function() return HttpService:JSONEncode(Lib.list) end)
+        if ok then pcall(writefile, Lib.file, e) end
+    end
+    Lib.load = function()
+        if not FILE_OK then return end
+        local ok, ex = pcall(isfile, Lib.file)
+        if ok and ex then
+            local ok2, raw = pcall(readfile, Lib.file)
+            if ok2 then
+                local ok3, d = pcall(function() return HttpService:JSONDecode(raw) end)
+                if ok3 and type(d) == "table" then Lib.list = d end
+            end
+        end
+    end
+    Lib.add = function(id, name, artist)
+        local clean = tostring(id or ""):gsub("rbxassetid://", ""):gsub("%D", "")
+        if clean == "" then notify("Library", "Enter a valid audio ID", false) return end
+        name = tostring(name or ""):gsub("^%s+", ""):gsub("%s+$", "")
+        if name == "" then name = "Song " .. (#Lib.list + 1) end
+        for _, e in ipairs(Lib.list) do
+            if e.id == clean then
+                e.name = name; if artist and artist ~= "" then e.artist = artist end
+                Lib.save(); if Lib.refresh then Lib.refresh() end
+                notify("Library", "Updated: " .. name)
+                return
+            end
+        end
+        Lib.list[#Lib.list+1] = { id=clean, name=name, artist=artist or "" }
+        Lib.save(); if Lib.refresh then Lib.refresh() end
+        notify("Library", "Saved: " .. name)
+    end
+    Lib.remove = function(i)
+        local e = Lib.list[i]; if not e then return end
+        table.remove(Lib.list, i)
+        Lib.save(); if Lib.refresh then Lib.refresh() end
+        notify("Library", "Deleted: " .. e.name, false)
+    end
+    Lib.load()
+
+    -- player -------------------------------------------------
+    Music.play = function(id, name, artist)
+        local clean = tostring(id or ""):gsub("rbxassetid://", ""):gsub("%D", "")
+        if clean == "" then notify("Music", "Enter a valid audio ID", false) return end
+        Music.id = clean
+        Music.name = (name and name ~= "") and name or ("Audio " .. clean)
+        Music.artist = artist or ""
+        Music.sound.SoundId = "rbxassetid://" .. clean
+        Music.sound.TimePosition = 0
+        Music.sound:Play()
+        Music.playing = true
+        Lyrics.clear()
+        notify("Music", "Playing: " .. Music.name)
+        Fn.updateHud()
+        if Lyrics.auto then Lyrics.fetch((Music.artist ~= "" and (Music.artist .. " ") or "") .. Music.name, true) end
+        task.delay(4, function()
+            if Music.id == clean and Music.sound.TimeLength == 0 then
+                notify("Music", "Audio could not load (private/blocked ID?)", false)
+            end
+        end)
+    end
+
+    Music.toggle = function()
+        if not Music.id then notify("Music", "Nothing loaded — pick a song first", false) return end
+        if Music.playing then Music.sound:Pause(); Music.playing = false
+        else Music.sound:Resume(); Music.playing = true end
+        Fn.updateHud()
+    end
+
+    Music.stop = function()
+        Music.sound:Stop(); Music.playing = false
+        Fn.updateHud()
+    end
+
+    local function step(dir)
+        if #Lib.list == 0 then notify("Music", "Save songs in the library first", false) return end
+        local cur = 0
+        for i, e in ipairs(Lib.list) do if e.id == Music.id then cur = i; break end end
+        local nxt = ((cur - 1 + dir) % #Lib.list) + 1
+        local e = Lib.list[nxt]
+        Music.play(e.id, e.name, e.artist)
+    end
+    Music.next = function() step(1) end
+    Music.prev = function() step(-1) end
+
+    Music.sound.Ended:Connect(function() if not Music.looped then step(1) end end)
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- WORLD FX  (weather, floating cubes, ghost trail, screen effects)
+-- ══════════════════════════════════════════════════════════════
+do
+    local fx = new("Folder", {Name="ShyFX", Parent=workspace})
+    local function emitterPart(name, size)
+        return new("Part", {Name=name,Anchored=true,CanCollide=false,CanQuery=false,CanTouch=false,CastShadow=false,Transparency=1,Size=size,Parent=fx})
+    end
+    local sky = emitterPart("Sky", Vector3.new(110, 1, 110))
+    local vol = emitterPart("Vol", Vector3.new(80, 30, 80))
+    local rainE, snowE, flyE, atmo
+    local tint = new("ColorCorrectionEffect", {Name="ShyTint", Enabled=false, Parent=Lighting})
+    local flash = new("ColorCorrectionEffect", {Name="ShyFlash", Parent=Lighting})
+    local bloom = new("BloomEffect", {Name="ShyBloom", Enabled=false, Intensity=0.7, Size=28, Threshold=0.85, Parent=Lighting})
+    local cubes, amb = {}, {}
+
+    -- weather
+    Wx.rain = function()
+        if rainE then rainE:Destroy(); rainE = nil end
+        if not feat.rain then return end
+        rainE = new("ParticleEmitter", {
+            Rate=900, Lifetime=NumberRange.new(0.55, 0.65), Speed=NumberRange.new(95, 110),
+            EmissionDirection=Enum.NormalId.Bottom, SpreadAngle=Vector2.new(2, 2),
+            Orientation=Enum.ParticleOrientation.VelocityParallel,
+            Size=NumberSequence.new(0.5), Squash=NumberSequence.new(-3),
+            Transparency=NumberSequence.new(0.45), Color=ColorSequence.new(Color3.fromRGB(175, 200, 255)),
+            LightEmission=0.25, Acceleration=Vector3.new(-8, 0, 0), Parent=sky,
+        })
+    end
+    Wx.snow = function()
+        if snowE then snowE:Destroy(); snowE = nil end
+        if not feat.snow then return end
+        snowE = new("ParticleEmitter", {
+            Rate=350, Lifetime=NumberRange.new(7, 9), Speed=NumberRange.new(5, 8),
+            EmissionDirection=Enum.NormalId.Bottom, SpreadAngle=Vector2.new(25, 25),
+            Size=NumberSequence.new(0.35), Transparency=NumberSequence.new(0.15),
+            Color=ColorSequence.new(Color3.fromRGB(255, 255, 255)), LightEmission=0.4,
+            Acceleration=Vector3.new(3, 0, 2), Rotation=NumberRange.new(0, 360), RotSpeed=NumberRange.new(-40, 40), Parent=sky,
+        })
+    end
+    Wx.fog = function()
+        if atmo then atmo:Destroy(); atmo = nil end
+        if feat.fog then
+            atmo = new("Atmosphere", {Name="ShyFog", Density=feat.fogDensity, Offset=0.25, Color=Color3.fromRGB(200, 210, 225), Decay=Color3.fromRGB(110, 120, 140), Glare=0, Haze=2, Parent=Lighting})
+        end
+    end
+    Wx.fogDensity = function(v) if atmo then atmo.Density = v end end
+    Wx.fireflies = function()
+        if flyE then flyE:Destroy(); flyE = nil end
+        if not feat.fireflies then return end
+        flyE = new("ParticleEmitter", {
+            Rate=18, Lifetime=NumberRange.new(5, 8), Speed=NumberRange.new(0.5, 1.5),
+            EmissionDirection=Enum.NormalId.Top, SpreadAngle=Vector2.new(180, 180),
+            Size=NumberSequence.new({NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(0.3, 0.28), NumberSequenceKeypoint.new(1, 0)}),
+            Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.2, 0.1), NumberSequenceKeypoint.new(0.8, 0.1), NumberSequenceKeypoint.new(1, 1)}),
+            Color=ColorSequence.new(EFFECT_COLOR), LightEmission=1, Acceleration=Vector3.new(0, 0.4, 0), Parent=vol,
+        })
+    end
+
+    -- floating cubes
+    local function mkCube(size, transp)
+        return new("Part", {Anchored=true,CanCollide=false,CanQuery=false,CanTouch=false,CastShadow=false,Material=Enum.Material.Neon,Size=Vector3.new(size,size,size),Color=EFFECT_COLOR,Transparency=transp,Parent=fx})
+    end
+    Wx.cubes = function()
+        for _, p in ipairs(cubes) do p:Destroy() end
+        cubes = {}
+        if feat.cubes then for i = 1, feat.cubeCount do cubes[i] = mkCube(0.7, 0.2) end end
+    end
+    Wx.ambient = function()
+        for _, e in ipairs(amb) do e.part:Destroy() end
+        amb = {}
+        if feat.ambient then
+            local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            local base = hrp and hrp.Position or camera.CFrame.Position
+            for i = 1, 28 do
+                amb[i] = {
+                    part = mkCube(0.3 + math.random() * 0.6, 0.35),
+                    pos = base + Vector3.new(math.random(-45, 45), math.random(-6, 18), math.random(-45, 45)),
+                    s = 0.6 + math.random() * 1.2, ph = math.random() * 6.28,
+                }
+            end
+        end
+    end
+
+    -- screen effects
+    Wx.tint = function()
+        tint.Enabled = feat.tint
+        local k = feat.tintStrength / 100
+        tint.TintColor = Color3.new(1, 1, 1):Lerp(EFFECT_COLOR, k * 0.75)
+        tint.Saturation = 0.15 * k
+        tint.Contrast = 0.08 * k
+        tint.Brightness = -0.03 * k
+    end
+    Wx.bloom = function() bloom.Enabled = feat.bloom end
+
+    local vig = {}
+    do
+        local function edge(size, pos, rot)
+            local f = new("Frame", {Size=size, Position=pos, BackgroundColor3=Color3.fromRGB(0, 10, 10), BorderSizePixel=0, Visible=false, ZIndex=1, Parent=UI.ovGui})
+            local g = Instance.new("UIGradient")
+            g.Rotation = rot
+            g.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.2), NumberSequenceKeypoint.new(1, 1)})
+            g.Parent = f
+            vig[#vig+1] = f
+        end
+        edge(UDim2.new(1,0,0.3,0), UDim2.new(0,0,0,0), 90)
+        edge(UDim2.new(1,0,0.3,0), UDim2.new(0,0,0.7,0), 270)
+        edge(UDim2.new(0.22,0,1,0), UDim2.new(0,0,0,0), 0)
+        edge(UDim2.new(0.22,0,1,0), UDim2.new(0.78,0,0,0), 180)
+    end
+    Wx.vignette = function()
+        for _, f in ipairs(vig) do f.Visible = feat.vignette end
+    end
+
+    -- ghost trail (afterimage clones)
+    local function spawnGhost(char)
+        local ok, c = pcall(function() return char:Clone() end)
+        if not ok or not c then return end
+        local parts = {}
+        for _, d in ipairs(c:GetDescendants()) do
+            if d:IsA("BasePart") then
+                d.Anchored = true; d.CanCollide = false; d.CanQuery = false; d.CanTouch = false; d.CastShadow = false
+                d.Material = Enum.Material.Neon; d.Color = EFFECT_COLOR
+                if d.Name == "HumanoidRootPart" then d.Transparency = 1 else d.Transparency = 0.45; parts[#parts+1] = d end
+            elseif d:IsA("Script") or d:IsA("LocalScript") or d:IsA("Decal") or d:IsA("Texture") or d:IsA("Humanoid")
+                or d:IsA("Sound") or d:IsA("BillboardGui") or d:IsA("ParticleEmitter") or d:IsA("Trail")
+                or d:IsA("Light") or d:IsA("Highlight") or d:IsA("Beam") or d:IsA("SurfaceAppearance") then
+                d:Destroy()
+            end
+        end
+        c.Parent = fx
+        for _, p in ipairs(parts) do
+            TS:Create(p, TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Transparency = 1}):Play()
+        end
+        task.delay(0.7, function() c:Destroy() end)
+    end
+
+    -- recolor everything on effect-color change
+    Wx.color = function()
+        for _, p in ipairs(cubes) do p.Color = EFFECT_COLOR end
+        for _, e in ipairs(amb) do e.part.Color = EFFECT_COLOR end
+        if feat.fireflies then Wx.fireflies() end
+        Wx.tint()
+        for _, f in ipairs(vig) do f.BackgroundColor3 = EFFECT_COLOR:Lerp(Color3.new(0, 0, 0), 0.85) end
+    end
+
+    Wx.all = function()
+        Wx.rain(); Wx.snow(); Wx.fog(); Wx.fireflies(); Wx.cubes(); Wx.ambient(); Wx.tint(); Wx.bloom(); Wx.vignette()
+    end
+
+    -- update loop
+    local t0, lastGhost = tick(), 0
+    RS.RenderStepped:Connect(function(dt)
+        camera = workspace.CurrentCamera or camera
+        local cp = camera.CFrame.Position
+        sky.CFrame = CFrame.new(cp + Vector3.new(0, 45, 0))
+        vol.CFrame = CFrame.new(cp)
+        local now = tick() - t0
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+
+        if feat.cubes then
+            local n = #cubes
+            for i, c in ipairs(cubes) do
+                local a = now * feat.cubeSpeed + (i / math.max(n, 1)) * math.pi * 2
+                local r = feat.cubeRadius
+                local pos = hrp.Position + Vector3.new(math.cos(a) * r, 0.8 + math.sin(now * 2 + i) * 0.9, math.sin(a) * r)
+                c.CFrame = CFrame.new(pos) * CFrame.Angles(now + i, now * 1.3, i)
+            end
+        end
+
+        if feat.ambient then
+            for _, e in ipairs(amb) do
+                e.pos = e.pos + Vector3.new(math.sin(now * 0.3 + e.ph) * 0.4 * dt, 0.3 * dt, math.cos(now * 0.25 + e.ph) * 0.4 * dt)
+                if (e.pos - hrp.Position).Magnitude > 55 or e.pos.Y > hrp.Position.Y + 35 then
+                    e.pos = hrp.Position + Vector3.new(math.random(-45, 45), math.random(-6, 4), math.random(-45, 45))
+                end
+                local p = e.pos + Vector3.new(0, math.sin(now * e.s + e.ph) * 1.2, 0)
+                e.part.CFrame = CFrame.new(p) * CFrame.Angles(now * e.s, now * e.s * 0.7, e.ph)
+            end
+        end
+
+        if feat.ghost and now - lastGhost >= feat.ghostInterval then
+            local v = hrp.AssemblyLinearVelocity
+            if Vector3.new(v.X, 0, v.Z).Magnitude > 3 then
+                lastGhost = now
+                spawnGhost(char)
+            end
+        end
+    end)
+
+    task.spawn(function()
+        while true do
+            task.wait(math.random(7, 16))
+            if feat.thunder then
+                for _ = 1, 2 do
+                    flash.Brightness = 0.5
+                    task.wait(0.06)
+                    tween(flash, 0.25, {Brightness = 0})
+                    task.wait(0.35)
+                end
+            end
+        end
+    end)
+
+    player.CharacterAdded:Connect(function() task.wait(1); if feat.ambient then Wx.ambient() end end)
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- MAIN WINDOW
+-- ══════════════════════════════════════════════════════════════
+local mkListPage
+do
+    local gui = new("ScreenGui",{Name="ShyClient",ResetOnSpawn=false,IgnoreGuiInset=true,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,Parent=pg})
+    UI.gui = gui
+    local SB_W, GAP = 72, 12
+    local MAIN_W, MAIN_H = 620, 440
+    local ROOT_W = SB_W + GAP + MAIN_W
+    local HEAD_H = 70
+    UI.MIN_W, UI.MIN_H, UI.ROOT_W, UI.MAIN_H = SB_W + GAP + 320, 260, ROOT_W, MAIN_H
+
+    local win = new("Frame",{
+        Name="Root", Size=UDim2.new(0, ROOT_W, 0, MAIN_H), Position=UDim2.new(0.5, 0, 0.5, 0),
+        AnchorPoint=Vector2.new(0.5, 0.5), BackgroundTransparency=1, Visible=false, Active=true, Parent=gui
+    })
+    UI.win = win
+    local uiScale = new("UIScale", {Scale = 1, Parent = win})
+    local canvas = new("CanvasGroup", {Name="Canvas", Size=UDim2.new(1,0,1,0), BackgroundTransparency=1, GroupTransparency=1, Parent=win})
+
+    local sidebar = new("Frame",{Name="Sidebar",Size=UDim2.new(0,SB_W,1,0),BackgroundColor3=T.Sidebar,BackgroundTransparency=TR.Sidebar,BorderSizePixel=0,Parent=canvas})
+    corner(sidebar, 18); stroke(sidebar, 1, 0.5, T.Line); regRef(sidebar, "BackgroundColor3", "Sidebar"); addSheen(sidebar)
+    UI.sidebar = sidebar
+
+    local mainPanel = new("Frame",{Name="Main",Size=UDim2.new(1,-(SB_W+GAP),1,0),Position=UDim2.new(0,SB_W+GAP,0,0),BackgroundColor3=T.Bg,BackgroundTransparency=TR.Window,BorderSizePixel=0,ClipsDescendants=true,Parent=canvas})
+    corner(mainPanel, 18); stroke(mainPanel, 1, 0.5, T.Line); regRef(mainPanel, "BackgroundColor3", "Bg"); addSheen(mainPanel)
+    UI.mainPanel = mainPanel
+
+    local header = new("Frame",{Name="Header",Size=UDim2.new(1,0,0,HEAD_H),BackgroundTransparency=1,Parent=mainPanel})
+    local ht = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,22,0,14),Size=UDim2.new(1,-140,0,22),Font=Enum.Font.GothamBold,Text="Shy Client",TextColor3=T.Text,TextSize=17,TextXAlignment=Enum.TextXAlignment.Left,Parent=header})
+    local hs = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,22,0,38),Size=UDim2.new(1,-140,0,16),Font=Enum.Font.Gotham,Text="Welcome, "..(player.DisplayName or player.Name),TextColor3=T.Dim,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,Parent=header})
+    regRef(ht,"TextColor3","Text"); regRef(hs,"TextColor3","Dim")
+    local clockLbl = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(1,-110,0,22),Size=UDim2.new(0,90,0,20),Font=Enum.Font.GothamMedium,Text="00:00",TextColor3=T.Dim,TextSize=12,TextXAlignment=Enum.TextXAlignment.Right,Parent=header})
+    regRef(clockLbl,"TextColor3","Dim")
+    local clockDot = new("Frame",{Size=UDim2.new(0,14,0,14),Position=UDim2.new(1,-128,0,25),BackgroundColor3=T.Card,BorderSizePixel=0,Parent=header})
+    corner(clockDot, 7); stroke(clockDot, 1, 0.4, T.Line)
+    local clockHand = new("Frame",{Size=UDim2.new(0,4,0,4),Position=UDim2.new(0.5,-2,0.5,-2),BackgroundColor3=T.Dim,BorderSizePixel=0,Parent=clockDot})
+    corner(clockHand, 2)
+    task.spawn(function()
+        while header.Parent do
+            task.wait(1)
+            clockLbl.Text = os.date("%I:%M %p"):gsub("^0", "")
+        end
+    end)
+    drag(win, header)
+
+    UI.contentArea = new("Frame",{Name="Content",Size=UDim2.new(1,-32,1,-HEAD_H-16),Position=UDim2.new(0,16,0,HEAD_H),BackgroundTransparency=1,Parent=mainPanel})
+
+    -- resize handle
+    local rh = new("TextButton",{Size=UDim2.new(0,20,0,20),Position=UDim2.new(1,-20,1,-20),BackgroundTransparency=1,Text="",AutoButtonColor=false,ZIndex=60,Parent=win})
+    local grip = new("Frame",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,ZIndex=61,Parent=rh})
+    for i = 1, 2 do
+        local line = new("Frame",{Size=UDim2.new(0,10,0,1),Position=UDim2.new(0,6+(i-1)*4,0,14-(i-1)*4),BackgroundColor3=T.Dim,BackgroundTransparency=0.45,BorderSizePixel=0,Rotation=45,ZIndex=62,Parent=grip})
+        corner(line, 1)
+    end
+    rh.MouseEnter:Connect(function() for _, c in ipairs(grip:GetChildren()) do if c:IsA("Frame") then c.BackgroundTransparency = 0.1 end end end)
+    rh.MouseLeave:Connect(function() for _, c in ipairs(grip:GetChildren()) do if c:IsA("Frame") then c.BackgroundTransparency = 0.45 end end end)
+    local rszActive, rszStart, rszOrig = false, nil, nil
+    rh.InputBegan:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            rszActive = true; rszStart = i.Position; rszOrig = win.AbsoluteSize
+        end
+    end)
+    UIS.InputChanged:Connect(function(i)
+        if not rszActive then return end
+        if i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch then
+            local dx, dy = i.Position.X - rszStart.X, i.Position.Y - rszStart.Y
+            win.Size = UDim2.new(0, math.max(UI.MIN_W, rszOrig.X + dx), 0, math.max(UI.MIN_H, rszOrig.Y + dy))
+        end
+    end)
+    UIS.InputEnded:Connect(function(i)
+        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then rszActive = false end
+    end)
+
+    -- open / close
+    local OPEN_FADE  = TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local OPEN_SCALE = TweenInfo.new(0.28, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+    local CLOSE_FADE = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+    local CLOSE_SCALE= TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
+
+    Fn.openMenu = function()
+        if UI.isOpen then return end
+        UI.isOpen = true
+        canvas.GroupTransparency = 1
+        uiScale.Scale = 0.94
+        win.Visible = true
+        TS:Create(canvas, OPEN_FADE, {GroupTransparency = 0}):Play()
+        TS:Create(uiScale, OPEN_SCALE, {Scale = 1}):Play()
+        TS:Create(glassBlur, TweenInfo.new(0.3), {Size = Glass.on and Glass.blur or 6}):Play()
+    end
+    Fn.closeMenu = function()
+        if not UI.isOpen then return end
+        UI.isOpen = false
+        TS:Create(canvas, CLOSE_FADE, {GroupTransparency = 1}):Play()
+        TS:Create(uiScale, CLOSE_SCALE, {Scale = 0.94}):Play()
+        TS:Create(glassBlur, TweenInfo.new(0.3), {Size = 0}):Play()
+        task.delay(0.18, function() if not UI.isOpen then win.Visible = false end end)
+    end
+    Fn.toggleMenu = function() if UI.isOpen then Fn.closeMenu() else Fn.openMenu() end end
+
+    -- sidebar tabs
+    local Pages, Tabs = {}, {}
+    local cur = nil
+    local tabList = new("Frame",{Size=UDim2.new(1,0,1,-80),Position=UDim2.new(0,0,0,14),BackgroundTransparency=1,Parent=sidebar})
+    new("UIListLayout",{Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder,HorizontalAlignment=Enum.HorizontalAlignment.Center,Parent=tabList})
+
+    local tabSpecs = {
+        {name="home",     label="Home",   order=1},
+        {name="movement", label="Move",   order=2},
+        {name="visuals",  label="Visual", order=3},
+        {name="overlays", label="Overlay",order=4},
+        {name="themes",   label="Theme",  order=5},
+        {name="music",    label="Music",  order=6},
+        {name="saves",    label="Saves",  order=7},
+        {name="more",     label="More",   order=8},
+    }
+
+    local function setTabVisual(t, active)
+        tween(t.btn, 0.15, {
+            BackgroundColor3 = active and T.Hover or T.Sidebar,
+            BackgroundTransparency = active and (TR.Card - 0.05) or 1
+        })
+        t.label.TextColor3 = active and T.Text or T.Dim
+    end
+
+    Fn.selTab = function(name)
+        if cur == name then return end
+        cur = name
+        for tn, p in pairs(Pages) do p.Visible = (tn == name) end
+        for tn, t in pairs(Tabs) do setTabVisual(t, tn == name) end
+    end
+
+    for _, spec in ipairs(tabSpecs) do
+        local btn = new("TextButton",{Size=UDim2.new(1,-16,0,36),BackgroundColor3=T.Sidebar,BackgroundTransparency=1,Text="",BorderSizePixel=0,AutoButtonColor=false,LayoutOrder=spec.order,Parent=tabList})
+        corner(btn, 10)
+        local label = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(1,0,1,0),Font=Enum.Font.GothamMedium,Text=spec.label,TextColor3=T.Dim,TextSize=11,TextXAlignment=Enum.TextXAlignment.Center,Parent=btn})
+        btn.MouseEnter:Connect(function() if cur ~= spec.name then tween(btn,0.12,{BackgroundColor3=T.Hover, BackgroundTransparency=0.4}) end end)
+        btn.MouseLeave:Connect(function() if cur ~= spec.name then tween(btn,0.12,{BackgroundTransparency=1}) end end)
+        btn.MouseButton1Click:Connect(function() Fn.selTab(spec.name) end)
+        Tabs[spec.name] = {btn=btn, label=label}
+    end
+
+    local miscBtn = new("TextButton",{Size=UDim2.new(1,-16,0,36),Position=UDim2.new(0,8,1,-48),BackgroundColor3=T.Sidebar,BackgroundTransparency=1,Text="",BorderSizePixel=0,AutoButtonColor=false,Parent=sidebar})
+    corner(miscBtn, 10)
+    local miscLabel = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(1,0,1,0),Font=Enum.Font.GothamMedium,Text="Misc",TextColor3=T.Dim,TextSize=11,Parent=miscBtn})
+    miscBtn.MouseEnter:Connect(function() if cur ~= "misc" then tween(miscBtn,0.12,{BackgroundColor3=T.Hover, BackgroundTransparency=0.4}) end end)
+    miscBtn.MouseLeave:Connect(function() if cur ~= "misc" then tween(miscBtn,0.12,{BackgroundTransparency=1}) end end)
+    miscBtn.MouseButton1Click:Connect(function() Fn.selTab("misc") end)
+    Tabs.misc = {btn=miscBtn, label=miscLabel}
+
+    mkListPage = function(name)
+        local p = new("ScrollingFrame",{
+            Size=UDim2.new(1,0,1,0), BackgroundTransparency=1, BorderSizePixel=0, ScrollBarThickness=3,
+            ScrollBarImageColor3=T.Muted, ScrollBarImageTransparency=0.5, CanvasSize=UDim2.new(0,0,0,0),
+            AutomaticCanvasSize=Enum.AutomaticSize.Y, Visible=false, Parent=UI.contentArea
+        })
+        new("UIListLayout",{Padding=UDim.new(0,6), Parent=p})
+        Pages[name] = p
+        return p
+    end
+
+    UI.Pages = Pages
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- WIDGET BUILDERS
+-- ══════════════════════════════════════════════════════════════
+local function hdr(p, t)
+    local l = new("TextLabel",{Size=UDim2.new(1,-4,0,26),BackgroundTransparency=1,Font=Enum.Font.GothamBold,Text=t:upper(),TextColor3=T.Dim,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,Parent=p})
+    local bar = new("Frame",{Size=UDim2.new(0,2,0,12),Position=UDim2.new(0,-6,0.5,-6),BackgroundColor3=T.Accent,BorderSizePixel=0,Parent=l})
+    corner(bar, 1); gradient(bar, T.Accent, T.Accent2, 90)
+    return l
+end
+
+local function mkT(p, label, def, cb, kbName)
+    local st = def or false
+    local row = new("TextButton",{Size=UDim2.new(1,-4,0,48),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,AutoButtonColor=false,Text="",Parent=p})
+    corner(row, RM); stroke(row, 1, 0.55, T.Line)
+    regRef(row, "BackgroundColor3", "Card"); regCard(row)
+    row.MouseEnter:Connect(function() tween(row, 0.15, {BackgroundColor3 = T.Hover}) end)
+    row.MouseLeave:Connect(function() tween(row, 0.15, {BackgroundColor3 = T.Card}) end)
+    local kW = kbName and 46 or 0
+    local lbl = new("TextLabel",{Size=UDim2.new(1,-kW-80,1,0),Position=UDim2.new(0,18,0,0),BackgroundTransparency=1,Text=label,TextColor3=T.Text,Font=Enum.Font.GothamMedium,TextSize=13,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=3,Parent=row})
+    regRef(lbl, "TextColor3", "Text")
+    local chip
+    if kbName then
+        chip = new("TextButton",{Size=UDim2.new(0,42,0,20),Position=UDim2.new(1,-106,0.5,-10),BackgroundColor3=T.Panel,BackgroundTransparency=TR.Card,BorderSizePixel=0,Text="—",TextColor3=T.Dim,Font=Enum.Font.GothamBold,TextSize=10,AutoButtonColor=false,ZIndex=4,Parent=row})
+        corner(chip, 6); stroke(chip, 1, 0.55, T.Line)
+        chip.MouseButton1Click:Connect(function() openKeyPrompt(kbName) end)
+    end
+    local track = new("Frame",{Size=UDim2.new(0,40,0,22),Position=UDim2.new(1,-54,0.5,-11),BackgroundColor3=st and T.On or T.Off,BackgroundTransparency=st and 0 or 0.25,BorderSizePixel=0,ZIndex=2,Parent=row})
+    corner(track, 11)
+    local trackGrad = gradient(track, T.Accent, T.Accent2, 0)
+    trackGrad.Enabled = st
+    local trackStroke = stroke(track, 1, st and 0.5 or 0.7, st and T.Accent or T.Line, true)
+    local knob = new("Frame",{Size=UDim2.new(0,16,0,16),Position=st and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,3,0.5,-8),BackgroundColor3=st and Color3.fromRGB(255,255,255) or Color3.fromRGB(240,240,244),BorderSizePixel=0,ZIndex=3,Parent=track})
+    corner(knob, 8)
+    local function setSt(v)
+        st = v
+        tween(track, 0.22, {BackgroundColor3 = st and T.On or T.Off, BackgroundTransparency = st and 0 or 0.25})
+        tween(knob, 0.22, {Position = st and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,3,0.5,-8), BackgroundColor3 = st and Color3.fromRGB(255,255,255) or Color3.fromRGB(240,240,244)})
+        trackGrad.Enabled = st
+        trackStroke.Color = st and T.Accent or T.Line
+        trackStroke.Transparency = st and 0.5 or 0.7
+        if cb then pcall(cb, st) end
+    end
+    row.MouseButton1Click:Connect(function() setSt(not st) end)
+    if kbName then
+        Keybinds[kbName] = {key=nil, label=label, isToggle=true, getState=function() return st end, setState=setSt}
+        ToggleReg[kbName] = setSt
+        task.spawn(function()
+            local last
+            while row.Parent do
+                local k = Keybinds[kbName].key; local t = k and k.Name or "—"
+                if t ~= last then chip.Text = t; chip.TextColor3 = k and T.Accent or T.Dim; last = t end
+                task.wait(0.2)
+            end
+        end)
+    end
+end
+
+local function mkB(p, label, cb, kbName)
+    local btn = new("TextButton",{Size=UDim2.new(1,-4,0,46),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,AutoButtonColor=false,Text="",Parent=p})
+    corner(btn, RM); stroke(btn, 1, 0.55, T.Line)
+    regRef(btn, "BackgroundColor3", "Card"); regCard(btn)
+    btn.MouseEnter:Connect(function() tween(btn, 0.15, {BackgroundColor3 = T.Hover}) end)
+    btn.MouseLeave:Connect(function() tween(btn, 0.15, {BackgroundColor3 = T.Card}) end)
+    local kW = kbName and 46 or 0
+    local lbl = new("TextLabel",{Size=UDim2.new(1,-kW-32,1,0),Position=UDim2.new(0,18,0,0),BackgroundTransparency=1,Text=label,TextColor3=T.Text,Font=Enum.Font.GothamMedium,TextSize=13,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=3,Parent=btn})
+    regRef(lbl, "TextColor3", "Text")
+    local arrow = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(0,20,1,0),Position=UDim2.new(1,-28,0,0),Font=Enum.Font.GothamBold,Text="›",TextColor3=T.Muted,TextSize=16,TextXAlignment=Enum.TextXAlignment.Right,ZIndex=3,Parent=btn})
+    regRef(arrow, "TextColor3", "Muted")
+    if kbName then
+        local chip = new("TextButton",{Size=UDim2.new(0,42,0,20),Position=UDim2.new(1,-64,0.5,-10),BackgroundColor3=T.Panel,BackgroundTransparency=TR.Card,BorderSizePixel=0,Text="—",TextColor3=T.Dim,Font=Enum.Font.GothamBold,TextSize=10,AutoButtonColor=false,ZIndex=4,Parent=btn})
+        corner(chip, 6); stroke(chip, 1, 0.55, T.Line)
+        chip.MouseButton1Click:Connect(function() openKeyPrompt(kbName) end)
+        Keybinds[kbName] = {key=nil, label=label, isToggle=false, fire=cb}
+        task.spawn(function()
+            local last
+            while btn.Parent do
+                local k = Keybinds[kbName].key; local t = k and k.Name or "—"
+                if t ~= last then chip.Text = t; chip.TextColor3 = k and T.Accent or T.Dim; last = t end
+                task.wait(0.2)
+            end
+        end)
+    end
+    btn.MouseButton1Click:Connect(function() if cb then pcall(cb) end end)
+    return btn
+end
+
+local function mkS(p, label, mn, mx, def, cb, saveName, isF)
+    local v = def
+    local row = new("Frame",{Size=UDim2.new(1,-4,0,58),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,Parent=p})
+    corner(row, RM); stroke(row, 1, 0.55, T.Line)
+    regRef(row, "BackgroundColor3", "Card"); regCard(row)
+    local lbl = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,18,0,9),Size=UDim2.new(1,-120,0,16),Font=Enum.Font.GothamMedium,Text=label,TextColor3=T.Text,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=3,Parent=row})
+    regRef(lbl, "TextColor3", "Text")
+    local vBox = new("Frame",{Position=UDim2.new(1,-72,0,7),Size=UDim2.new(0,54,0,20),BackgroundColor3=T.Accent,BackgroundTransparency=0,BorderSizePixel=0,ZIndex=3,Parent=row})
+    corner(vBox, 6); gradient(vBox, T.Accent, T.Accent2, 0)
+    local vLbl = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(1,0,1,0),Font=Enum.Font.GothamBold,Text=tostring(v),TextColor3=ON_ACCENT,TextSize=11,ZIndex=4,Parent=vBox})
+    local track = new("Frame",{Position=UDim2.new(0,18,0,38),Size=UDim2.new(1,-90,0,4),BackgroundColor3=T.Off,BackgroundTransparency=0.2,BorderSizePixel=0,ZIndex=3,Parent=row})
+    corner(track, 2)
+    local fill = new("Frame",{Size=UDim2.new((v-mn)/(mx-mn),0,1,0),BackgroundColor3=T.Accent,BackgroundTransparency=0,BorderSizePixel=0,ZIndex=4,Parent=track})
+    corner(fill, 2); gradient(fill, T.Accent, T.Accent2, 0)
+    local function setV(nv)
+        nv = math.clamp(nv, mn, mx)
+        if isF then v = math.floor(nv*100+0.5)/100 else v = math.floor(nv+0.5) end
+        vLbl.Text = tostring(v)
+        tween(fill, 0.1, {Size = UDim2.new((v-mn)/(mx-mn),0,1,0)})
+        if cb then pcall(cb, v) end
+    end
+    local d = false
+    local function fx(x)
+        local rel = math.clamp((x - track.AbsolutePosition.X) / track.AbsoluteSize.X, 0, 1)
+        setV(mn + rel * (mx - mn))
+    end
+    track.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then d = true; fx(i.Position.X) end end)
+    UIS.InputChanged:Connect(function(i) if d and i.UserInputType == Enum.UserInputType.MouseMovement then fx(i.Position.X) end end)
+    UIS.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 then d = false end end)
+    if saveName then SliderReg[saveName] = {get=function() return v end, set=setV} end
+end
+
+-- labelled text input row; returns the TextBox
+local function mkInput(p, label, placeholder, width)
+    local row = new("Frame",{Size=UDim2.new(1,-4,0,50),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,Parent=p})
+    corner(row, RM); stroke(row, 1, 0.55, T.Line)
+    regRef(row, "BackgroundColor3", "Card"); regCard(row)
+    local w = width or 150
+    local l = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,16,0,0),Size=UDim2.new(1,-w-30,1,0),Font=Enum.Font.GothamMedium,Text=label,TextColor3=T.Text,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=3,Parent=row})
+    regRef(l, "TextColor3", "Text")
+    local box = new("TextBox",{Size=UDim2.new(0,w,0,30),Position=UDim2.new(1,-w-12,0.5,-15),BackgroundColor3=T.Bg,BackgroundTransparency=0.3,Font=Enum.Font.GothamMedium,Text="",PlaceholderText=placeholder or "",TextColor3=T.Text,PlaceholderColor3=T.Muted,TextSize=12,BorderSizePixel=0,ClearTextOnFocus=false,ZIndex=3,Parent=row})
+    corner(box, 8); stroke(box, 1, 0.55, T.Line)
+    regRef(box, "BackgroundColor3", "Bg"); regRef(box, "TextColor3", "Text")
+    return box
+end
+
+-- accent action button (full width)
+local function mkAccentBtn(p, text, cb, h)
+    local b = new("TextButton",{Size=UDim2.new(1,-4,0,h or 42),BackgroundColor3=Color3.fromRGB(255,255,255),BackgroundTransparency=0,Text=text,Font=Enum.Font.GothamBold,TextColor3=ON_ACCENT,TextSize=12,BorderSizePixel=0,AutoButtonColor=false,Parent=p})
+    corner(b, RM); gradient(b, T.Accent, T.Accent2, 0)
+    b.MouseButton1Click:Connect(function() pcall(cb) end)
+    return b
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- TRANSPARENCY + LIQUID GLASS
+-- ══════════════════════════════════════════════════════════════
+Fn.applyAllTransparency = function()
+    UI.mainPanel.BackgroundTransparency = TR.Window
+    UI.sidebar.BackgroundTransparency = TR.Sidebar
+    for _, f in ipairs(UI.cards) do
+        if f.Parent then f.BackgroundTransparency = TR.Card end
+    end
+    for _, f in pairs(overlays) do f.BackgroundTransparency = TR.Overlay end
+end
+
+Fn.setOpacity = function(amount)
+    TR.Window = amount; TR.Sidebar = amount * 0.7; TR.Content = amount * 0.8
+    TR.Title = amount * 0.6; TR.Card = amount * 0.5
+    TR.Overlay = math.min(amount + 0.05, 0.95); TR.Notify = amount * 0.8
+    Fn.applyAllTransparency()
+end
+
+Fn.applyGlassTransparency = function()
+    local b = Glass.clarity / 100
+    TR.Window = b; TR.Sidebar = math.max(b - 0.02, 0); TR.Content = b; TR.Title = b
+    TR.Card = math.min(b + 0.18, 0.93); TR.Overlay = math.max(b - 0.05, 0); TR.Notify = math.max(b - 0.05, 0)
+    Fn.applyAllTransparency()
+end
+
+Fn.setGlass = function(on, quiet)
+    if on == Glass.on then return end
+    Glass.on = on
+    if on then
+        Glass.savedT = {}
+        for k, v in pairs(GLASS_T) do Glass.savedT[k] = T[k]; T[k] = v end
+    elseif Glass.savedT then
+        for k, v in pairs(Glass.savedT) do T[k] = v end
+        Glass.savedT = nil
+    end
+    applyTheme()
+    for _, g in ipairs(GlassGrads) do if g.Parent then g.Enabled = on end end
+    for _, e in ipairs(GlassStrokes) do
+        if e.s.Parent then e.g.Enabled = on; e.s.Transparency = on and 0.2 or e.o end
+    end
+    if on then Fn.applyGlassTransparency() else Fn.setOpacity(UI.opacity / 100) end
+    if UI.isOpen then TS:Create(glassBlur, TweenInfo.new(0.3), {Size = on and Glass.blur or 6}):Play() end
+    if Fn.refreshKb then Fn.refreshKb() end
+    if Fn.updateHud then Fn.updateHud() end
+    if not quiet then notify("Liquid Glass", on and "ON" or "OFF", on) end
+end
+
+Fn.setEffectColor = function(c, quiet)
+    EFFECT_COLOR = c
+    if UI.colorPreview then UI.colorPreview.BackgroundColor3 = c end
+    if UI.colorInput then UI.colorInput.Text = colorToHex(c) end
+    Fn.rebuildVFX(); Wx.color()
+    if not quiet then notify("Color", "Applied to all effects") end
+end
+
+Fn.hudPack = function()
+    Fn.setGlass(false, true)
+    for k, v in pairs(PRESETS.Teal) do T[k] = v end
+    applyTheme(); Fn.applyAllTransparency(); Fn.refreshKb()
+    Fn.setEffectColor(Color3.fromRGB(80, 235, 185), true)
+    for _, n in ipairs({"MusicHud","Coords","SpeedHud","KbOverlay","LyricsBar","FxTint","FxVignette","FxBloom"}) do
+        if ToggleReg[n] then ToggleReg[n](true) end
+    end
+    Fn.updateHud()
+    notify("HUD Pack", "Teal HUD enabled")
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- PAGES
+-- ══════════════════════════════════════════════════════════════
+local pMove, pVis, pOver, pTheme, pSaves, pMisc, pMusic, pMore
+pMove  = mkListPage("movement")
+pVis   = mkListPage("visuals")
+pOver  = mkListPage("overlays")
+pTheme = mkListPage("themes")
+pMusic = mkListPage("music")
+pSaves = mkListPage("saves")
+pMore  = mkListPage("more")
+pMisc  = mkListPage("misc")
+
+-- HOME ---------------------------------------------------------
+do
+    local pHome = new("Frame",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Visible=false,Parent=UI.contentArea})
+    UI.Pages["home"] = pHome
+
+    local topRow = new("Frame",{Size=UDim2.new(1,0,1,-96),BackgroundTransparency=1,Parent=pHome})
+
+    local profileCard = new("Frame",{Size=UDim2.new(0.42,-6,1,0),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,Parent=topRow})
+    corner(profileCard, 14); stroke(profileCard, 1, 0.55, T.Line)
+    regRef(profileCard, "BackgroundColor3", "Card"); regCard(profileCard)
+
+    local avatarBig = new("Frame",{Size=UDim2.new(0,92,0,92),Position=UDim2.new(0.5,-46,0,22),BackgroundColor3=T.Off,BorderSizePixel=0,Parent=profileCard})
+    corner(avatarBig, 46); stroke(avatarBig, 2, 0, T.Accent, true)
+    gradient(avatarBig, T.Accent, T.Accent2, 90)
+    local avatarInner = new("Frame",{Size=UDim2.new(1,-6,1,-6),Position=UDim2.new(0,3,0,3),BackgroundColor3=T.Bg,BorderSizePixel=0,Parent=avatarBig})
+    corner(avatarInner, 43)
+    local avImgBig = new("ImageLabel",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Parent=avatarInner})
+    corner(avImgBig, 43)
+    local onlineDot = new("Frame",{Size=UDim2.new(0,16,0,16),Position=UDim2.new(1,-22,1,-22),BackgroundColor3=Color3.fromRGB(80,220,130),BorderSizePixel=0,Parent=avatarBig})
+    corner(onlineDot, 8); stroke(onlineDot, 2, 0.2, T.Card, true)
+    task.spawn(function()
+        local ok, thumb = pcall(function() return Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size150x150) end)
+        if ok and thumb then avImgBig.Image = thumb end
+    end)
+
+    local n1 = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,128),Size=UDim2.new(1,0,0,22),Font=Enum.Font.GothamBold,Text=player.DisplayName or player.Name,TextColor3=T.Text,TextSize=15,Parent=profileCard})
+    local n2 = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,152),Size=UDim2.new(1,-20,0,16),Font=Enum.Font.Gotham,Text=game.Name or "Unknown",TextColor3=T.Dim,TextSize=11,TextTruncate=Enum.TextTruncate.AtEnd,Parent=profileCard})
+    regRef(n1,"TextColor3","Text"); regRef(n2,"TextColor3","Dim")
+
+    local chatBox = new("Frame",{Size=UDim2.new(1,-28,0,36),Position=UDim2.new(0,14,1,-50),BackgroundColor3=T.Sidebar,BackgroundTransparency=0.4,BorderSizePixel=0,Parent=profileCard})
+    corner(chatBox, 10); stroke(chatBox, 1, 0.55, T.Line)
+    local chatDot = new("Frame",{Size=UDim2.new(0,20,0,20),Position=UDim2.new(0,10,0.5,-10),BackgroundColor3=T.Hover,BorderSizePixel=0,Parent=chatBox})
+    corner(chatDot, 6)
+    new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(1,0,1,0),Font=Enum.Font.GothamBold,Text="•",TextColor3=T.Dim,TextSize=20,Parent=chatDot})
+    new("TextBox",{BackgroundTransparency=1,Position=UDim2.new(0,38,0,0),Size=UDim2.new(1,-46,1,0),Font=Enum.Font.Gotham,Text="",PlaceholderText="Chat...",PlaceholderColor3=T.Muted,TextColor3=T.Text,TextSize=11,TextXAlignment=Enum.TextXAlignment.Left,ClearTextOnFocus=false,Parent=chatBox})
+
+    local activityCard = new("Frame",{Size=UDim2.new(0.58,-6,1,0),Position=UDim2.new(0.42,6,0,0),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,Parent=topRow})
+    corner(activityCard, 14); stroke(activityCard, 1, 0.55, T.Line)
+    regRef(activityCard, "BackgroundColor3", "Card"); regCard(activityCard)
+
+    local a1 = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,16,0,14),Size=UDim2.new(1,-32,0,18),Font=Enum.Font.GothamBold,Text="Session",TextColor3=T.Text,TextSize=13,TextXAlignment=Enum.TextXAlignment.Left,Parent=activityCard})
+    local a2 = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,16,0,34),Size=UDim2.new(1,-32,0,14),Font=Enum.Font.Gotham,Text="Current game",TextColor3=T.Dim,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,Parent=activityCard})
+    regRef(a1,"TextColor3","Text"); regRef(a2,"TextColor3","Dim")
+
+    local thumbArea = new("Frame",{Size=UDim2.new(1,-32,0,96),Position=UDim2.new(0,16,0,56),BackgroundColor3=T.Sidebar,BorderSizePixel=0,ClipsDescendants=true,Parent=activityCard})
+    corner(thumbArea, 8)
+    local thumbImg = new("ImageLabel",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Image="",ScaleType=Enum.ScaleType.Crop,Parent=thumbArea})
+    corner(thumbImg, 8)
+    task.spawn(function()
+        local ok, info = pcall(function() return game:GetService("MarketplaceService"):GetProductInfo(game.PlaceId) end)
+        if ok and info and info.IconImageAssetId and info.IconImageAssetId > 0 then
+            thumbImg.Image = "rbxassetid://" .. info.IconImageAssetId
+        end
+    end)
+    local thumbBadge = new("Frame",{Size=UDim2.new(0,160,0,22),Position=UDim2.new(0,8,1,-28),BackgroundColor3=Color3.fromRGB(0,0,0),BackgroundTransparency=0.35,BorderSizePixel=0,Parent=thumbArea})
+    corner(thumbBadge, 6)
+    new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(1,-16,1,0),Position=UDim2.new(0,8,0,0),Font=Enum.Font.GothamBold,Text=game.Name or "Unknown",TextColor3=Color3.fromRGB(255,255,255),TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,Parent=thumbBadge})
+    local a3 = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,16,0,162),Size=UDim2.new(1,-32,1,-170),Font=Enum.Font.Gotham,Text="Quick toggles below. Right Shift to close.",TextColor3=T.Dim,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,TextWrapped=true,Parent=activityCard})
+    regRef(a3,"TextColor3","Dim")
+
+    local bottomRow = new("Frame",{Size=UDim2.new(1,0,0,84),Position=UDim2.new(0,0,1,-84),BackgroundTransparency=1,Parent=pHome})
+    new("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,Padding=UDim.new(0,10),SortOrder=Enum.SortOrder.LayoutOrder,Parent=bottomRow})
+
+    local function mkTile(label, kbName, order)
+        local tile = new("TextButton",{Size=UDim2.new(0.25,-8,1,0),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,Text="",BorderSizePixel=0,AutoButtonColor=false,LayoutOrder=order,Parent=bottomRow})
+        corner(tile, 12); stroke(tile, 1, 0.55, T.Line)
+        regRef(tile, "BackgroundColor3", "Card"); regCard(tile)
+        local lbl = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(1,0,1,0),Font=Enum.Font.GothamBold,Text=label,TextColor3=T.Text,TextSize=13,Parent=tile})
+        regRef(lbl, "TextColor3", "Text")
+        tile.MouseEnter:Connect(function() tween(tile, 0.15, {BackgroundColor3 = T.Hover}) end)
+        tile.MouseLeave:Connect(function() tween(tile, 0.15, {BackgroundColor3 = T.Card}) end)
+        tile.MouseButton1Click:Connect(function()
+            local kb = kbName and Keybinds[kbName]
+            if kb then
+                if kb.isToggle then kb.setState(not kb.getState())
+                elseif kb.fire then pcall(kb.fire) end
+            end
+        end)
+    end
+    mkTile("Fly", "Fly", 1)
+    mkTile("NoClip", "NoClip", 2)
+    mkTile("Glow", "VFXGlow", 3)
+    mkTile("Free Cam", "FreeCam", 4)
+end
+
+-- MOVEMENT -----------------------------------------------------
+do
+    hdr(pMove, "Movement")
+    mkT(pMove, "Fly", false, function(s) if s then Fn.startFly() else Fn.stopFly() end end, "Fly")
+    mkS(pMove, "Fly Speed", 10, 300, 55, function(v) feat.flySpeed = v end, "FlySpeed")
+    mkS(pMove, "Fly Acceleration", 2, 30, 12, function(v) feat.flyAccel = v end, "FlyAccel")
+    mkS(pMove, "Fly Damping", 2, 30, 10, function(v) feat.flyDamping = v end, "FlyDamp")
+    mkS(pMove, "Vertical Boost", 1, 3, 1.3, function(v) feat.flyVerticalBoost = v end, "FlyVert", true)
+    mkS(pMove, "Pitch Amount", 0, 1, 0.85, function(v) feat.flyPitchAmount = v end, "FlyPitch", true)
+    mkT(pMove, "Infinite Jump", false, function(s) feat.infJump = s; notify("Inf Jump", s and "ON" or "OFF", s) end, "InfJump")
+    mkT(pMove, "NoClip", false, function(s) feat.noclip = s; notify("NoClip", s and "ON" or "OFF", s) end, "NoClip")
+    hdr(pMove, "Character")
+    mkS(pMove, "WalkSpeed", 8, 300, 16, function(v)
+        feat.walkSpeed = v
+        local h = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if h and not feat.freeCam then h.WalkSpeed = v end
+    end, "WalkSpeed")
+    mkS(pMove, "JumpPower", 20, 300, 50, function(v)
+        feat.jumpPower = v
+        local h = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if h and not feat.freeCam then h.UseJumpPower = true; h.JumpPower = v end
+    end, "JumpPower")
+    hdr(pMove, "Camera")
+    mkT(pMove, "Free Cam", false, function(s)
+        if s then
+            local ok = Fn.startFreeCam()
+            if ok == false then
+                task.defer(function() if ToggleReg["FreeCam"] then ToggleReg["FreeCam"](false) end end)
+            end
+        else
+            Fn.stopFreeCam()
+        end
+    end, "FreeCam")
+    mkS(pMove, "Free Cam Speed", 10, 300, 60, function(v) feat.freeCamSpeed = v end, "FreeCamSpeed")
+end
+
+-- VISUALS ------------------------------------------------------
+do
+    hdr(pVis, "Effect Color")
+    local colorRow = new("Frame",{Size=UDim2.new(1,-4,0,50),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,Parent=pVis})
+    corner(colorRow, RM); stroke(colorRow, 1, 0.55, T.Line)
+    regRef(colorRow, "BackgroundColor3", "Card"); regCard(colorRow)
+    local clrLbl = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,18,0,0),Size=UDim2.new(1,-180,1,0),Font=Enum.Font.GothamMedium,Text="Color",TextColor3=T.Text,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=3,Parent=colorRow})
+    regRef(clrLbl, "TextColor3", "Text")
+    UI.colorPreview = new("Frame",{Size=UDim2.new(0,32,0,26),Position=UDim2.new(1,-152,0.5,-13),BackgroundColor3=EFFECT_COLOR,BorderSizePixel=0,ZIndex=3,Parent=colorRow})
+    corner(UI.colorPreview, 7); stroke(UI.colorPreview, 1, 0.35, T.Line)
+    UI.colorInput = new("TextBox",{Size=UDim2.new(0,110,0,30),Position=UDim2.new(1,-114,0.5,-15),BackgroundColor3=T.Bg,BackgroundTransparency=0.3,Font=Enum.Font.GothamBold,Text=colorToHex(EFFECT_COLOR),PlaceholderText="#RRGGBB",TextColor3=T.Text,PlaceholderColor3=T.Muted,TextSize=12,BorderSizePixel=0,ClearTextOnFocus=false,ZIndex=3,Parent=colorRow})
+    corner(UI.colorInput, 8); stroke(UI.colorInput, 1, 0.55, T.Line)
+    regRef(UI.colorInput, "BackgroundColor3", "Bg"); regRef(UI.colorInput, "TextColor3", "Text")
+    UI.colorInput.FocusLost:Connect(function()
+        local c = hexToColor(UI.colorInput.Text)
+        if c then Fn.setEffectColor(c)
+        else
+            UI.colorInput.Text = colorToHex(EFFECT_COLOR)
+            notify("Color", "Invalid hex code", false)
+        end
+    end)
+
+    hdr(pVis, "Time of Day")
+    mkB(pVis, "Day  (12:00)", Fn.setDay, "DayBtn")
+    mkB(pVis, "Night  (00:00)", Fn.setNight, "NightBtn")
+    mkB(pVis, "Sunset  (17:30)", Fn.setSunset, "SunsetBtn")
+    mkB(pVis, "Restore Original", Fn.restoreLight, "RestoreTime")
+    mkS(pVis, "Clock Time", 0, 24, 12, function(v) Fn.saveLight(); Lighting.ClockTime = v end, "ClockTime")
+    mkS(pVis, "Brightness", 0, 5, 2, function(v) Fn.saveLight(); Lighting.Brightness = v end, "Brightness")
+
+    hdr(pVis, "Weather")
+    mkT(pVis, "Rain", false, function(s) feat.rain = s; Wx.rain() end, "WxRain")
+    mkT(pVis, "Snow", false, function(s) feat.snow = s; Wx.snow() end, "WxSnow")
+    mkT(pVis, "Fog", false, function(s) feat.fog = s; Wx.fog() end, "WxFog")
+    mkS(pVis, "Fog Density", 0, 1, 0.35, function(v) feat.fogDensity = v; Wx.fogDensity(v) end, "FogDensity", true)
+    mkT(pVis, "Thunder Flashes", false, function(s) feat.thunder = s end, "WxThunder")
+
+    hdr(pVis, "Floating Effects")
+    mkT(pVis, "Floating Cubes (orbit)", false, function(s) feat.cubes = s; Wx.cubes() end, "FxCubes")
+    mkS(pVis, "Cube Count", 2, 16, 6, function(v) feat.cubeCount = v; if feat.cubes then Wx.cubes() end end, "CubeCount")
+    mkS(pVis, "Cube Radius", 2, 12, 4.5, function(v) feat.cubeRadius = v end, "CubeRadius", true)
+    mkS(pVis, "Cube Speed", 0, 5, 1.2, function(v) feat.cubeSpeed = v end, "CubeSpeed", true)
+    mkT(pVis, "Ambient Cubes", false, function(s) feat.ambient = s; Wx.ambient() end, "FxAmbient")
+    mkT(pVis, "Fireflies", false, function(s) feat.fireflies = s; Wx.fireflies() end, "FxFireflies")
+
+    hdr(pVis, "Ghost Trail")
+    mkT(pVis, "Ghost Trail (afterimages)", false, function(s) feat.ghost = s end, "FxGhost")
+    mkS(pVis, "Ghost Interval", 0.04, 0.4, 0.12, function(v) feat.ghostInterval = v end, "GhostInterval", true)
+
+    hdr(pVis, "Screen")
+    mkT(pVis, "Screen Tint", false, function(s) feat.tint = s; Wx.tint() end, "FxTint")
+    mkS(pVis, "Tint Strength", 0, 100, 60, function(v) feat.tintStrength = v; Wx.tint() end, "TintStrength")
+    mkT(pVis, "Bloom", false, function(s) feat.bloom = s; Wx.bloom() end, "FxBloom")
+    mkT(pVis, "Vignette", false, function(s) feat.vignette = s; Wx.vignette() end, "FxVignette")
+
+    hdr(pVis, "Body")
+    mkT(pVis, "Glow", false, function(s) feat.glow = s; Fn.rebuildVFX(); notify("Glow", s and "ON" or "OFF", s) end, "VFXGlow")
+    mkT(pVis, "Neon Body", false, function(s) feat.neon = s; Fn.rebuildVFX() end, "VFXNeon")
+    hdr(pVis, "Trails")
+    mkT(pVis, "Trail", false, function(s) feat.trail = s; Fn.rebuildVFX() end, "VFXTrail")
+    mkT(pVis, "Rainbow Trail", false, function(s) feat.rainbowTrail = s; Fn.rebuildVFX() end, "VFXRainbowTrail")
+    hdr(pVis, "Auras")
+    mkT(pVis, "Fire Aura", false, function(s) feat.fire = s; Fn.rebuildVFX() end, "VFXFire")
+    mkT(pVis, "Sparkle Aura", false, function(s) feat.sparkle = s; Fn.rebuildVFX() end, "VFXSparkle")
+    hdr(pVis, "Accessories")
+    mkT(pVis, "Halo", false, function(s) feat.halo = s; Fn.rebuildVFX() end, "VFXHalo")
+    mkT(pVis, "Wings", false, function(s) feat.wings = s; Fn.rebuildVFX() end, "VFXWings")
+    hdr(pVis, "Movement FX")
+    mkT(pVis, "Jump Rings", false, function(s) feat.jumpRing = s; Fn.rebuildVFX() end, "VFXJumpRing")
+    mkT(pVis, "Landing Rings", false, function(s) feat.landRing = s; Fn.rebuildVFX() end, "VFXLandRing")
+    hdr(pVis, "Environment")
+    mkT(pVis, "Fullbright", false, function(s) feat.fullbright = s; Fn.applyFB() end, "Fullbright")
+    mkS(pVis, "Camera FOV", 20, 120, 70, function(v) camera.FieldOfView = v end, "FOV", true)
+end
+
+-- OVERLAYS TAB ---------------------------------------------------
+do
+    hdr(pOver, "HUD Pack")
+    mkB(pOver, "Enable Full Teal HUD", Fn.hudPack)
+    hdr(pOver, "Overlays")
+    mkT(pOver, "Music HUD", false, function(s) overlays.musicHud.Visible = s; if s then Fn.updateHud() end end, "MusicHud")
+    mkT(pOver, "Lyrics Bar", false, function(s) overlays.lyrics.Visible = s; Lyrics.key = nil end, "LyricsBar")
+    mkT(pOver, "Coordinates", false, function(s) overlays.coords.Visible = s end, "Coords")
+    mkT(pOver, "Speed", false, function(s) overlays.speed.Visible = s end, "SpeedHud")
+    mkT(pOver, "Keybind Overlay", false, function(s)
+        overlays.keybinds.Visible = s
+        if s then Fn.refreshKb() end
+        notify("Keybind Overlay", s and "ON" or "OFF", s)
+    end, "KbOverlay")
+    mkT(pOver, "Status Bar", false, function(s) overlays.statusBar.Visible = s; notify("Status Bar", s and "ON" or "OFF", s) end, "StatusBar")
+    mkT(pOver, "FPS Counter", false, function(s) overlays.fps.Visible = s end, "FpsBox")
+    mkT(pOver, "Ping", false, function(s) overlays.ping.Visible = s end, "PingBox")
+    mkT(pOver, "Watermark", false, function(s) overlays.watermark.Visible = s end, "Watermark")
+    hdr(pOver, "Position")
+    mkB(pOver, "Reset All Positions", function()
+        for n, f in pairs(overlays) do if UI.defaultPos[n] then f.Position = UI.defaultPos[n] end end
+        notify("Overlays", "Positions reset")
+    end)
+end
+
+-- THEMES -------------------------------------------------------
+do
+    hdr(pTheme, "Liquid Glass")
+    mkB(pTheme, "Liquid Glass", function() Fn.setGlass(not Glass.on) end)
+    mkS(pTheme, "Glass Clarity", 30, 90, 62, function(v)
+        Glass.clarity = v
+        if Glass.on then Fn.applyGlassTransparency() end
+    end, "GlassClarity")
+    mkS(pTheme, "Glass Blur", 0, 30, 16, function(v)
+        Glass.blur = v
+        if Glass.on and UI.isOpen then TS:Create(glassBlur, TweenInfo.new(0.2), {Size = v}):Play() end
+    end, "GlassBlur")
+
+    hdr(pTheme, "UI Transparency")
+    mkS(pTheme, "Window Opacity", 0, 90, 5, function(v)
+        UI.opacity = v
+        if not Glass.on then Fn.setOpacity(v / 100) end
+    end, "UITransparency")
+
+    hdr(pTheme, "Presets")
+    for _, name in ipairs(PRESET_ORDER) do
+        mkB(pTheme, name, function()
+            Fn.setGlass(false, true)
+            for k, v in pairs(PRESETS[name]) do T[k] = v end
+            applyTheme()
+            Fn.applyAllTransparency()
+            Fn.refreshKb()
+            Fn.updateHud()
+            notify("Theme", name .. " applied")
+        end)
+    end
+end
+
+-- MUSIC TAB ----------------------------------------------------
+do
+    hdr(pMusic, "Now Playing")
+    local nowCard = new("Frame",{Size=UDim2.new(1,-4,0,72),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,Parent=pMusic})
+    corner(nowCard, RM); stroke(nowCard, 1, 0.55, T.Line)
+    regRef(nowCard, "BackgroundColor3", "Card"); regCard(nowCard)
+    UI.nowLbl = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,16,0,12),Size=UDim2.new(1,-32,0,20),Font=Enum.Font.GothamBold,Text="Nothing playing",TextColor3=T.Text,TextSize=13,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,Parent=nowCard})
+    regRef(UI.nowLbl, "TextColor3", "Text")
+    local nowSub = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,16,0,34),Size=UDim2.new(1,-32,0,16),Font=Enum.Font.Gotham,Text="Save songs below, then control them here or from the Music HUD",TextColor3=T.Muted,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,Parent=nowCard})
+    regRef(nowSub, "TextColor3", "Muted")
+
+    local ctrlRow = new("Frame",{Size=UDim2.new(1,-4,0,42),BackgroundTransparency=1,Parent=pMusic})
+    new("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder,Parent=ctrlRow})
+    local function mkMusicBtn(text, order, cb)
+        local b = new("TextButton",{Size=UDim2.new(0.2,-5,1,0),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,Text=text,Font=Enum.Font.GothamBold,TextColor3=T.Text,TextSize=11,BorderSizePixel=0,AutoButtonColor=false,LayoutOrder=order,Parent=ctrlRow})
+        corner(b, RM); stroke(b, 1, 0.55, T.Line)
+        regRef(b, "BackgroundColor3", "Card"); regRef(b, "TextColor3", "Text"); regCard(b)
+        b.MouseEnter:Connect(function() tween(b, 0.15, {BackgroundColor3 = T.Hover}) end)
+        b.MouseLeave:Connect(function() tween(b, 0.15, {BackgroundColor3 = T.Card}) end)
+        b.MouseButton1Click:Connect(function() cb(b) end)
+        return b
+    end
+    mkMusicBtn("Prev", 1, function() Music.prev() end)
+    mkMusicBtn("Play/Pause", 2, function() Music.toggle() end)
+    mkMusicBtn("Stop", 3, function() Music.stop() end)
+    mkMusicBtn("Next", 4, function() Music.next() end)
+    UI.loopBtn = mkMusicBtn("Loop: ON", 5, function(self)
+        Music.looped = not Music.looped
+        Music.sound.Looped = Music.looped
+        self.Text = Music.looped and "Loop: ON" or "Loop: OFF"
+    end)
+
+    hdr(pMusic, "Volume")
+    mkS(pMusic, "Music Volume", 0, 100, 50, function(v) Music.volume = v / 100; Music.sound.Volume = Music.volume end, "MusicVolume")
+
+    -- library inputs
+    hdr(pMusic, "Save a Song")
+    local nameBox = mkInput(pMusic, "Name", "My song")
+    local idBox = mkInput(pMusic, "Audio ID", "e.g. 1837879082")
+    local artBox = mkInput(pMusic, "Artist (for lyrics)", "optional")
+    mkAccentBtn(pMusic, "Save to Library", function() Lib.add(idBox.Text, nameBox.Text, artBox.Text) end)
+    mkAccentBtn(pMusic, "Save Currently Playing", function()
+        if not Music.id then notify("Library", "Nothing is playing", false) return end
+        Lib.add(Music.id, nameBox.Text ~= "" and nameBox.Text or Music.name, artBox.Text ~= "" and artBox.Text or Music.artist)
+    end)
+    mkAccentBtn(pMusic, "Play this ID", function() Music.play(idBox.Text, nameBox.Text, artBox.Text) end)
+
+    hdr(pMusic, "My Songs  (tap the name to rename)")
+    local libList = new("Frame",{Size=UDim2.new(1,-4,0,0),BackgroundTransparency=1,AutomaticSize=Enum.AutomaticSize.Y,Parent=pMusic})
+    new("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),Parent=libList})
+
+    Lib.refresh = function()
+        for _, c in ipairs(libList:GetChildren()) do if c:IsA("Frame") or c:IsA("TextLabel") then c:Destroy() end end
+        if #Lib.list == 0 then
+            local e = new("TextLabel",{Size=UDim2.new(1,0,0,42),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,Font=Enum.Font.Gotham,Text="No saved songs yet",TextColor3=T.Muted,TextSize=11,BorderSizePixel=0,Parent=libList})
+            corner(e, RM); stroke(e, 1, 0.55, T.Line); regRef(e, "BackgroundColor3", "Card"); regCard(e)
+            return
+        end
+        for i, entry in ipairs(Lib.list) do
+            local row = new("Frame",{Size=UDim2.new(1,0,0,52),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,LayoutOrder=i,Parent=libList})
+            corner(row, RM); stroke(row, 1, 0.55, T.Line); regRef(row, "BackgroundColor3", "Card"); regCard(row)
+            local nb = new("TextBox",{BackgroundTransparency=1,Position=UDim2.new(0,12,0,5),Size=UDim2.new(1,-140,0,22),Font=Enum.Font.GothamBold,Text=entry.name,TextColor3=T.Text,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,ClearTextOnFocus=false,TextTruncate=Enum.TextTruncate.AtEnd,Parent=row})
+            regRef(nb, "TextColor3", "Text")
+            nb.FocusLost:Connect(function()
+                local t = nb.Text:gsub("^%s+", ""):gsub("%s+$", "")
+                if t ~= "" then entry.name = t; Lib.save() else nb.Text = entry.name end
+            end)
+            local sub = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,12,0,28),Size=UDim2.new(1,-140,0,16),Font=Enum.Font.Gotham,Text="ID: "..entry.id..((entry.artist and entry.artist ~= "") and ("  •  "..entry.artist) or ""),TextColor3=T.Muted,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,Parent=row})
+            regRef(sub, "TextColor3", "Muted")
+            local play = new("TextButton",{Size=UDim2.new(0,64,0,28),Position=UDim2.new(1,-118,0.5,-14),BackgroundColor3=Color3.fromRGB(255,255,255),Text="Play",Font=Enum.Font.GothamBold,TextColor3=ON_ACCENT,TextSize=11,BorderSizePixel=0,AutoButtonColor=false,ZIndex=4,Parent=row})
+            corner(play, 7); gradient(play, T.Accent, T.Accent2, 0)
+            play.MouseButton1Click:Connect(function() Music.play(entry.id, entry.name, entry.artist) end)
+            local del = new("TextButton",{Size=UDim2.new(0,36,0,28),Position=UDim2.new(1,-46,0.5,-14),BackgroundColor3=T.Card,Text="X",Font=Enum.Font.GothamBold,TextColor3=T.Bad,TextSize=12,BorderSizePixel=0,AutoButtonColor=false,ZIndex=4,Parent=row})
+            corner(del, 7); stroke(del, 1, 0.55, T.Line)
+            del.MouseButton1Click:Connect(function() Lib.remove(i) end)
+        end
+    end
+    Lib.refresh()
+
+    -- lyrics
+    hdr(pMusic, "Lyrics")
+    mkT(pMusic, "Show Lyrics Bar", false, function(s)
+        if ToggleReg["LyricsBar"] then ToggleReg["LyricsBar"](s) end
+    end)
+    mkT(pMusic, "Auto-find lyrics when playing", true, function(s) Lyrics.auto = s end, "LyricsAuto")
+    mkS(pMusic, "Lyrics Offset (sec)", -5, 5, 0, function(v) Lyrics.offset = v end, "LyricsOffset", true)
+    local lyBox = mkInput(pMusic, "Artist - Song", "e.g. Michael Jackson Neverland", 190)
+    mkAccentBtn(pMusic, "Find Lyrics", function()
+        local q = lyBox.Text
+        if q == "" then q = ((Music.artist ~= "" and (Music.artist .. " ") or "") .. (Music.id and Music.name or "")) end
+        Lyrics.fetch(q)
+    end)
+    local pasteRow = new("Frame",{Size=UDim2.new(1,-4,0,96),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,Parent=pMusic})
+    corner(pasteRow, RM); stroke(pasteRow, 1, 0.55, T.Line); regRef(pasteRow, "BackgroundColor3", "Card"); regCard(pasteRow)
+    local pasteBox = new("TextBox",{Size=UDim2.new(1,-20,1,-16),Position=UDim2.new(0,10,0,8),BackgroundTransparency=1,Font=Enum.Font.Gotham,Text="",PlaceholderText="Paste lyrics here ([01:23.45] line = synced LRC, plain text = auto-spread)",TextColor3=T.Text,PlaceholderColor3=T.Muted,TextSize=11,MultiLine=true,TextWrapped=true,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,ClearTextOnFocus=false,Parent=pasteRow})
+    regRef(pasteBox, "TextColor3", "Text")
+    mkAccentBtn(pMusic, "Load Pasted Lyrics", function() Lyrics.loadText(pasteBox.Text) end)
+    mkB(pMusic, "Clear Lyrics", function() Lyrics.clear(); notify("Lyrics", "Cleared", false) end)
+
+    -- roblox library search
+    hdr(pMusic, "Search Roblox Library")
+    local searchRow = new("Frame",{Size=UDim2.new(1,-4,0,50),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,Parent=pMusic})
+    corner(searchRow, RM); stroke(searchRow, 1, 0.55, T.Line); regRef(searchRow, "BackgroundColor3", "Card"); regCard(searchRow)
+    local searchInput = new("TextBox",{Size=UDim2.new(1,-140,0,30),Position=UDim2.new(0,12,0.5,-15),BackgroundColor3=T.Bg,BackgroundTransparency=0.3,Font=Enum.Font.GothamMedium,Text="",PlaceholderText="song name or artist",TextColor3=T.Text,PlaceholderColor3=T.Muted,TextSize=12,BorderSizePixel=0,ClearTextOnFocus=false,Parent=searchRow})
+    corner(searchInput, 8); stroke(searchInput, 1, 0.55, T.Line)
+    regRef(searchInput, "BackgroundColor3", "Bg"); regRef(searchInput, "TextColor3", "Text")
+    local searchBtn = new("TextButton",{Size=UDim2.new(0,100,0,30),Position=UDim2.new(1,-112,0.5,-15),BackgroundColor3=Color3.fromRGB(255,255,255),Text="Search",Font=Enum.Font.GothamBold,TextColor3=ON_ACCENT,TextSize=12,BorderSizePixel=0,AutoButtonColor=false,Parent=searchRow})
+    corner(searchBtn, 8); gradient(searchBtn, T.Accent, T.Accent2, 0)
+    local resultsList = new("Frame",{Size=UDim2.new(1,-4,0,0),BackgroundTransparency=1,AutomaticSize=Enum.AutomaticSize.Y,Parent=pMusic})
+    new("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),Parent=resultsList})
+
+    local function note(text, h)
+        local e = new("TextLabel",{Size=UDim2.new(1,0,0,h or 40),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,Font=Enum.Font.Gotham,Text=text,TextColor3=T.Muted,TextSize=11,TextWrapped=true,BorderSizePixel=0,Parent=resultsList})
+        corner(e, RM); stroke(e, 1, 0.55, T.Line); regRef(e, "BackgroundColor3", "Card"); regCard(e)
+        return e
+    end
+
+    local function doSearch()
+        local query = searchInput.Text:gsub("^%s+", ""):gsub("%s+$", "")
+        if query == "" then notify("Music", "Type something to search", false) return end
+        for _, c in ipairs(resultsList:GetChildren()) do if c:IsA("Frame") or c:IsA("TextLabel") then c:Destroy() end end
+        local loading = note("Searching...", 36)
+        task.spawn(function()
+            local items
+            local ok, pages = pcall(function()
+                local params = Instance.new("AudioSearchParams")
+                params.SearchKeyword = query
+                return AssetService:SearchAudio(params)
+            end)
+            if ok and pages then
+                local ok2, page = pcall(function() return pages:GetCurrentPage() end)
+                if ok2 and type(page) == "table" then
+                    items = {}
+                    for _, it in ipairs(page) do
+                        items[#items+1] = { id = it.Id, name = it.Title or it.Name, artist = it.Artist }
+                    end
+                end
+            end
+            if not items then
+                local ok3, old = pcall(function() return AssetService:SearchAudioAsync(query, Enum.AssetType.Audio, 1, 20) end)
+                if ok3 and type(old) == "table" then
+                    items = {}
+                    for _, it in ipairs(old) do items[#items+1] = { id = it.Id, name = it.Name or it.Title, artist = it.Artist } end
+                end
+            end
+            loading:Destroy()
+            if not items or #items == 0 then
+                note("No results (search may be blocked in-game) — paste an audio ID instead.", 44)
+                return
+            end
+            for i, item in ipairs(items) do
+                local row = new("Frame",{Size=UDim2.new(1,0,0,48),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,LayoutOrder=i,Parent=resultsList})
+                corner(row, RM); stroke(row, 1, 0.55, T.Line); regRef(row, "BackgroundColor3", "Card"); regCard(row)
+                local tl = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,12,0,6),Size=UDim2.new(1,-170,0,18),Font=Enum.Font.GothamBold,Text=tostring(item.name or "Unknown"),TextColor3=T.Text,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,Parent=row})
+                regRef(tl, "TextColor3", "Text")
+                local sl = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,12,0,24),Size=UDim2.new(1,-170,0,14),Font=Enum.Font.Gotham,Text="ID: "..tostring(item.id).."  •  "..tostring(item.artist or "Unknown"),TextColor3=T.Muted,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,Parent=row})
+                regRef(sl, "TextColor3", "Muted")
+                local playB = new("TextButton",{Size=UDim2.new(0,54,0,28),Position=UDim2.new(1,-120,0.5,-14),BackgroundColor3=Color3.fromRGB(255,255,255),Text="Play",Font=Enum.Font.GothamBold,TextColor3=ON_ACCENT,TextSize=11,BorderSizePixel=0,AutoButtonColor=false,Parent=row})
+                corner(playB, 7); gradient(playB, T.Accent, T.Accent2, 0)
+                playB.MouseButton1Click:Connect(function() Music.play(item.id, item.name, item.artist) end)
+                local saveB = new("TextButton",{Size=UDim2.new(0,54,0,28),Position=UDim2.new(1,-62,0.5,-14),BackgroundColor3=T.Card,Text="Save",Font=Enum.Font.GothamBold,TextColor3=T.Text,TextSize=11,BorderSizePixel=0,AutoButtonColor=false,Parent=row})
+                corner(saveB, 7); stroke(saveB, 1, 0.55, T.Line)
+                saveB.MouseButton1Click:Connect(function() Lib.add(item.id, item.name, item.artist) end)
+            end
+        end)
+    end
+    searchBtn.MouseButton1Click:Connect(doSearch)
+    searchInput.FocusLost:Connect(function(enter) if enter then doSearch() end end)
+end
+
+-- SAVES --------------------------------------------------------
+do
+    local Saves, SaveOrder = {}, {}
+    local SAVE_FILE = "shyclient_saves.json"
+    local OVKB = {statusBar="StatusBar", fps="FpsBox", coords="Coords", ping="PingBox", watermark="Watermark",
+                  keybinds="KbOverlay", musicHud="MusicHud", speed="SpeedHud", lyrics="LyricsBar"}
+    local FEATMAP = {
+        Fly="fly", InfJump="infJump", NoClip="noclip", FreeCam="freeCam", Fullbright="fullbright",
+        VFXGlow="glow", VFXNeon="neon", VFXTrail="trail", VFXRainbowTrail="rainbowTrail", VFXFire="fire",
+        VFXSparkle="sparkle", VFXHalo="halo", VFXWings="wings", VFXJumpRing="jumpRing", VFXLandRing="landRing",
+        WxRain="rain", WxSnow="snow", WxFog="fog", WxThunder="thunder", FxFireflies="fireflies",
+        FxCubes="cubes", FxAmbient="ambient", FxGhost="ghost", FxTint="tint", FxBloom="bloom", FxVignette="vignette",
+    }
+
+    local function col(t)
+        if type(t) == "table" and #t == 3 then return Color3.new(t[1], t[2], t[3]) end
+        return nil
+    end
+
+    local function snap()
+        local d = {theme={}, transparency={}, features={}, keybinds={}, sliders={}, overlays={}, meta={}, music={}, glass={}}
+        local base = Glass.on and Glass.savedT or nil
+        for k, v in pairs(T) do
+            if typeof(v) == "Color3" then
+                local use = (base and base[k]) or v
+                d.theme[k] = {use.R, use.G, use.B}
+            end
+        end
+        for k, v in pairs(TR) do d.transparency[k] = v end
+        for k, v in pairs(feat) do if type(v) == "boolean" or type(v) == "number" then d.features[k] = v end end
+        d.features.effectColor = {EFFECT_COLOR.R, EFFECT_COLOR.G, EFFECT_COLOR.B}
+        for n, kb in pairs(Keybinds) do d.keybinds[n] = kb.key and kb.key.Name or nil end
+        for n, s in pairs(SliderReg) do local ok, v = pcall(s.get); if ok then d.sliders[n] = v end end
+        for name, frame in pairs(overlays) do
+            d.overlays[name] = {xS=frame.Position.X.Scale, xO=frame.Position.X.Offset, yS=frame.Position.Y.Scale, yO=frame.Position.Y.Offset, vis=frame.Visible}
+        end
+        local win = UI.win
+        d.meta.winPos = {xS=win.Position.X.Scale, xO=win.Position.X.Offset, yS=win.Position.Y.Scale, yO=win.Position.Y.Offset}
+        d.meta.winSize = {w=win.Size.X.Offset, h=win.Size.Y.Offset}
+        d.music = {volume=Music.volume, looped=Music.looped}
+        d.glass = {on=Glass.on, clarity=Glass.clarity, blur=Glass.blur, opacity=UI.opacity}
+        return d
+    end
+
+    local function load(d)
+        if type(d) ~= "table" then return false end
+        Fn.setGlass(false, true)
+        if d.theme then
+            for k, v in pairs(d.theme) do local c = col(v); if c then T[k] = c end end
+            applyTheme()
+        end
+        if d.transparency then
+            for k, v in pairs(d.transparency) do if TR[k] ~= nil then TR[k] = v end end
+            Fn.applyAllTransparency()
+        end
+        if d.keybinds then
+            for n, kn in pairs(d.keybinds) do
+                if Keybinds[n] then
+                    if kn then local kc = Enum.KeyCode[kn]; if kc then Keybinds[n].key = kc end
+                    else Keybinds[n].key = nil end
+                end
+            end
+        end
+        if d.features then
+            for k, v in pairs(d.features) do
+                if k == "effectColor" then
+                    local c = col(v); if c then Fn.setEffectColor(c, true) end
+                elseif feat[k] ~= nil then feat[k] = v end
+            end
+            for kbName, featKey in pairs(FEATMAP) do
+                if ToggleReg[kbName] and feat[featKey] ~= nil then
+                    pcall(function() ToggleReg[kbName](feat[featKey]) end)
+                end
+            end
+            Fn.rebuildVFX(); Wx.all()
+        end
+        if d.sliders then
+            for n, v in pairs(d.sliders) do
+                local s = SliderReg[n]
+                if s then pcall(function() s.set(v) end) end
+            end
+        end
+        if d.overlays then
+            for name, pos in pairs(d.overlays) do
+                local key = (name == "keybindOverlay") and "keybinds" or name
+                local f = overlays[key]
+                if f then
+                    f.Position = UDim2.new(pos.xS, pos.xO, pos.yS, pos.yO)
+                    local m = OVKB[key]
+                    if m and ToggleReg[m] then pcall(ToggleReg[m], pos.vis) else f.Visible = pos.vis end
+                end
+            end
+            Fn.refreshKb()
+        end
+        if d.meta then
+            local win = UI.win
+            if d.meta.winPos then win.Position = UDim2.new(d.meta.winPos.xS, d.meta.winPos.xO, d.meta.winPos.yS, d.meta.winPos.yO) end
+            if d.meta.winSize then
+                win.Size = UDim2.new(0, math.max(UI.MIN_W, d.meta.winSize.w or UI.ROOT_W), 0, math.max(UI.MIN_H, d.meta.winSize.h or UI.MAIN_H))
+            end
+        end
+        if d.music then
+            if d.music.volume then Music.volume = d.music.volume; Music.sound.Volume = Music.volume end
+            if d.music.looped ~= nil then
+                Music.looped = d.music.looped; Music.sound.Looped = Music.looped
+                if UI.loopBtn then UI.loopBtn.Text = Music.looped and "Loop: ON" or "Loop: OFF" end
+            end
+        end
+        if d.glass then
+            if d.glass.opacity then UI.opacity = d.glass.opacity end
+            if d.glass.clarity then Glass.clarity = d.glass.clarity end
+            if d.glass.blur then Glass.blur = d.glass.blur end
+            if d.glass.on then Fn.setGlass(true, true) end
+        end
+        Fn.updateHud()
+        return true
+    end
+
+    local function save()
+        if not FILE_OK then return end
+        local ok, e = pcall(function() return HttpService:JSONEncode({s=Saves, o=SaveOrder}) end)
+        if ok then pcall(writefile, SAVE_FILE, e) end
+    end
+
+    if FILE_OK then
+        local ok, ex = pcall(isfile, SAVE_FILE)
+        if ok and ex then
+            local ok2, raw = pcall(readfile, SAVE_FILE)
+            if ok2 then
+                local ok3, d = pcall(function() return HttpService:JSONDecode(raw) end)
+                if ok3 and type(d) == "table" then Saves = d.s or {}; SaveOrder = d.o or {} end
+            end
+        end
+    end
+
+    local refreshList
+    hdr(pSaves, "Save Current Setup")
+    local ni = mkInput(pSaves, "Save Name", "Config 1")
+
+    local function doSave(name)
+        if name == "" then notify("Save", "Enter a name", false) return end
+        if not Saves[name] then table.insert(SaveOrder, name) end
+        Saves[name] = snap()
+        save()
+        ni.Text = ""
+        if refreshList then refreshList() end
+        notify("Save", "Saved: " .. name)
+    end
+
+    local br = new("Frame",{Size=UDim2.new(1,-4,0,46),BackgroundTransparency=1,Parent=pSaves})
+    new("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,Padding=UDim.new(0,8),Parent=br})
+    local sb = new("TextButton",{Size=UDim2.new(0.5,-4,1,0),BackgroundColor3=Color3.fromRGB(255,255,255),Text="Save",Font=Enum.Font.GothamBold,TextColor3=ON_ACCENT,TextSize=12,BorderSizePixel=0,AutoButtonColor=false,Parent=br})
+    corner(sb, RM); gradient(sb, T.Accent, T.Accent2, 0)
+    sb.MouseButton1Click:Connect(function() doSave((ni.Text:gsub("^%s+", ""):gsub("%s+$", ""))) end)
+    local qs = new("TextButton",{Size=UDim2.new(0.5,-4,1,0),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,Text="Quick Save",Font=Enum.Font.GothamBold,TextColor3=T.Text,TextSize=12,BorderSizePixel=0,AutoButtonColor=false,Parent=br})
+    corner(qs, RM); stroke(qs, 1, 0.55, T.Line)
+    regRef(qs, "BackgroundColor3", "Card"); regRef(qs, "TextColor3", "Text"); regCard(qs)
+    qs.MouseButton1Click:Connect(function() doSave("Slot " .. (#SaveOrder + 1)) end)
+
+    hdr(pSaves, "Saved Slots")
+    local sl = new("Frame",{Size=UDim2.new(1,-4,0,0),BackgroundTransparency=1,AutomaticSize=Enum.AutomaticSize.Y,Parent=pSaves})
+    new("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6),Parent=sl})
+
+    refreshList = function()
+        for _, c in ipairs(sl:GetChildren()) do if c:IsA("Frame") or c:IsA("TextLabel") then c:Destroy() end end
+        if #SaveOrder == 0 then
+            local e = new("TextLabel",{Size=UDim2.new(1,0,0,42),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,Font=Enum.Font.Gotham,Text="No saves yet",TextColor3=T.Muted,TextSize=11,BorderSizePixel=0,Parent=sl})
+            corner(e, RM); stroke(e, 1, 0.55, T.Line); regRef(e, "BackgroundColor3", "Card"); regCard(e)
+            return
+        end
+        for i, name in ipairs(SaveOrder) do
+            if Saves[name] then
+                local row = new("Frame",{Size=UDim2.new(1,0,0,48),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,LayoutOrder=i,Parent=sl})
+                corner(row, RM); stroke(row, 1, 0.55, T.Line); regRef(row, "BackgroundColor3", "Card"); regCard(row)
+                local nl = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,16,0,0),Size=UDim2.new(1,-230,1,0),Font=Enum.Font.GothamMedium,Text=name,TextColor3=T.Text,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=3,Parent=row})
+                regRef(nl, "TextColor3", "Text")
+                local function mb(t, x, bg, fg, isAccent, cb)
+                    local b = new("TextButton",{Size=UDim2.new(0,64,0,28),Position=UDim2.new(1,x,0.5,-14),BackgroundColor3=bg,Text=t,Font=Enum.Font.GothamBold,TextColor3=fg,TextSize=11,BorderSizePixel=0,AutoButtonColor=false,ZIndex=4,Parent=row})
+                    corner(b, 7)
+                    if isAccent then gradient(b, T.Accent, T.Accent2, 0) else stroke(b, 1, 0.55, T.Line) end
+                    b.MouseButton1Click:Connect(cb)
+                end
+                mb("Load", -212, Color3.fromRGB(255,255,255), ON_ACCENT, true, function() if load(Saves[name]) then notify("Save", "Loaded: " .. name) end end)
+                mb("Export", -142, T.Card, T.Text, false, function()
+                    local ok, e = pcall(function() return HttpService:JSONEncode(Saves[name]) end)
+                    if ok and setclipboard then setclipboard(e); notify("Save", "Copied") end
+                end)
+                mb("Delete", -72, T.Card, T.Bad, false, function()
+                    Saves[name] = nil
+                    for k, n in ipairs(SaveOrder) do if n == name then table.remove(SaveOrder, k); break end end
+                    save(); if refreshList then refreshList() end
+                    notify("Save", "Deleted: " .. name, false)
+                end)
+            end
+        end
+    end
+    refreshList()
+
+    hdr(pSaves, "Import")
+    local ii = mkInput(pSaves, "Paste JSON", "{...}")
+    mkB(pSaves, "Import from Field", function()
+        if ii.Text == "" then notify("Import", "Paste JSON first", false) return end
+        local ok, d = pcall(function() return HttpService:JSONDecode(ii.Text) end)
+        if ok and type(d) == "table" then
+            local name = "Imported " .. (#SaveOrder + 1)
+            Saves[name] = d
+            table.insert(SaveOrder, name)
+            save(); if refreshList then refreshList() end
+            ii.Text = ""
+            notify("Import", "Imported: " .. name)
+        else
+            notify("Import", "Invalid JSON", false)
+        end
+    end)
+
+    hdr(pSaves, "Storage")
+    local si = new("TextLabel",{Size=UDim2.new(1,-4,0,56),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,Font=Enum.Font.Gotham,
+        Text = FILE_OK and "  File storage available. Saves + music library persist." or "  No file storage. Session only - use Export to share.",
+        TextColor3=T.Dim,TextSize=11,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Center,TextWrapped=true,BorderSizePixel=0,Parent=pSaves})
+    corner(si, RM); stroke(si, 1, 0.55, T.Line); regRef(si, "BackgroundColor3", "Card"); regRef(si, "TextColor3", "Dim"); regCard(si)
+end
+
+-- MORE (fling a player by name) ---------------------------------
+do
+    local flinging = false
+
+    local function findPlayerByName(query)
+        query = tostring(query or ""):gsub("^%s+", ""):gsub("%s+$", ""):lower()
+        if query == "" then return nil end
+        local partial = nil
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= player then
+                local n, d = p.Name:lower(), p.DisplayName:lower()
+                if n == query or d == query then return p end
+                if not partial and (n:sub(1, #query) == query or d:sub(1, #query) == query) then partial = p end
+            end
+        end
+        if partial then return partial end
+        for _, p in ipairs(Players:GetPlayers()) do
+            if p ~= player and (p.Name:lower():find(query, 1, true) or p.DisplayName:lower():find(query, 1, true)) then
+                return p
+            end
+        end
+        return nil
+    end
+
+    local function flingPlayer(target)
+        if flinging then notify("Fling", "Already flinging", false) return end
+        local char = player.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if not hrp or not hum then notify("Fling", "Character not ready", false) return end
+        local tchar = target.Character
+        local thrp = tchar and tchar:FindFirstChild("HumanoidRootPart")
+        if not thrp then notify("Fling", target.Name .. " has no character", false) return end
+
+        flinging = true
+        notify("Fling", "Flinging " .. target.Name)
+        local origCF = hrp.CFrame
+        local saved = {}
+        for _, p in ipairs(char:GetDescendants()) do
+            if p:IsA("BasePart") then
+                saved[p] = p.CustomPhysicalProperties
+                p.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
+            end
+        end
+
+        local startTime = tick()
+        local function finished()
+            local th = target.Character and target.Character:FindFirstChild("HumanoidRootPart")
+            local el = tick() - startTime
+            return el > 4 or not th or not target.Parent
+                or (el > 0.4 and th.AssemblyLinearVelocity.Magnitude > 300)
+                or not (player.Character and player.Character:FindFirstChild("HumanoidRootPart"))
+        end
+
+        local conn
+        conn = RS.Heartbeat:Connect(function()
+            if finished() then return end
+            local th = target.Character.HumanoidRootPart
+            local mh = player.Character.HumanoidRootPart
+            mh.CFrame = th.CFrame + th.AssemblyLinearVelocity * 0.1
+            mh.AssemblyAngularVelocity = Vector3.new(0, 1e5, 0)
+            mh.AssemblyLinearVelocity = Vector3.zero
+        end)
+
+        task.spawn(function()
+            while not finished() do task.wait(0.03) end
+            conn:Disconnect()
+            local h2 = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            if h2 then
+                for _ = 1, 10 do
+                    h2.AssemblyAngularVelocity = Vector3.zero
+                    h2.AssemblyLinearVelocity = Vector3.zero
+                    h2.CFrame = origCF
+                    task.wait()
+                end
+                for p, props in pairs(saved) do
+                    if p and p.Parent then p.CustomPhysicalProperties = props end
+                end
+            end
+            flinging = false
+            notify("Fling", "Done: " .. target.Name)
+        end)
+    end
+
+    hdr(pMore, "Fling Player")
+    local flingInput = mkInput(pMore, "Player Name", "username")
+    local function doFling()
+        local target = findPlayerByName(flingInput.Text)
+        if not target then notify("Fling", "Player not found", false) return end
+        flingPlayer(target)
+    end
+    mkAccentBtn(pMore, "Fling", doFling, 44)
+    flingInput.FocusLost:Connect(function(enter) if enter then doFling() end end)
+    local hint = new("TextLabel",{Size=UDim2.new(1,-4,0,44),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,Font=Enum.Font.Gotham,
+        Text="  Type a name or display name (partial works). You return to your spot afterwards.",
+        TextColor3=T.Dim,TextSize=11,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Center,TextWrapped=true,BorderSizePixel=0,Parent=pMore})
+    corner(hint, RM); stroke(hint, 1, 0.55, T.Line); regRef(hint, "BackgroundColor3", "Card"); regRef(hint, "TextColor3", "Dim"); regCard(hint)
+end
+
+-- MISC ---------------------------------------------------------
+do
+    hdr(pMisc, "Utility")
+    mkB(pMisc, "Reset Character", function() local c = player.Character; if c then c:BreakJoints() end; notify("Character", "Reset") end)
+    mkB(pMisc, "Rejoin Server", function() game:GetService("TeleportService"):Teleport(game.PlaceId, player) end)
+    mkB(pMisc, "Copy Position", function()
+        local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            local p = hrp.Position
+            local s = string.format("Vector3.new(%.1f, %.1f, %.1f)", p.X, p.Y, p.Z)
+            if setclipboard then setclipboard(s) end
+            notify("Position", s)
+        end
+    end)
+
+    hdr(pMisc, "About")
+    local aboutCard = new("Frame",{Size=UDim2.new(1,-4,0,96),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,Parent=pMisc})
+    corner(aboutCard, RM); stroke(aboutCard, 1, 0.55, T.Line)
+    regRef(aboutCard, "BackgroundColor3", "Card"); regCard(aboutCard)
+    local aboutStripe = new("Frame",{Size=UDim2.new(1,0,0,2),BackgroundColor3=Color3.fromRGB(255,255,255),BorderSizePixel=0,Parent=aboutCard})
+    corner(aboutStripe, RM); gradient(aboutStripe, T.Accent, T.Accent2, 0)
+    local t1 = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,16),Size=UDim2.new(1,0,0,20),Font=Enum.Font.GothamBold,Text="Shy Client",TextColor3=T.Text,TextSize=15,Parent=aboutCard})
+    local t2 = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,40),Size=UDim2.new(1,0,0,18),Font=Enum.Font.GothamMedium,Text="Made by n_e_r_v_y with love",TextColor3=T.Accent,TextSize=12,Parent=aboutCard})
+    regRef(t1, "TextColor3", "Text"); regRef(t2, "TextColor3", "Accent")
+    local creditBar = new("Frame",{Size=UDim2.new(0,40,0,2),Position=UDim2.new(0.5,-20,0,68),BackgroundColor3=Color3.fromRGB(255,255,255),BorderSizePixel=0,Parent=aboutCard})
+    corner(creditBar, 1); gradient(creditBar, T.Accent, T.Accent2, 0)
+    local t3 = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,74),Size=UDim2.new(1,0,0,14),Font=Enum.Font.Gotham,Text="Thank you for using Shy Client",TextColor3=T.Muted,TextSize=10,Parent=aboutCard})
+    regRef(t3, "TextColor3", "Muted")
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- START
+-- ══════════════════════════════════════════════════════════════
+Fn.selTab("home")
+Fn.refreshKb()
+Fn.updateHud()
+
+UIS.InputBegan:Connect(function(i, gp)
+    if gp then return end
+    if i.KeyCode == Enum.KeyCode.RightShift then Fn.toggleMenu() end
+end)
+
+notify("Shy Client", "Ready. Right Shift.")
+print("[Shy Client v2] Loaded.")
