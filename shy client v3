@@ -1,4 +1,4 @@
--- Shy Client v2
+-- Shy Client v3
 -- Made by n_e_r_v_y with love
 
 local UIS = game:GetService("UserInputService")
