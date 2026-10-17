@@ -49,7 +49,6 @@ local PRESETS = {
     Dark={Bg=Color3.fromRGB(6,6,8),Panel=Color3.fromRGB(10,10,14),Sidebar=Color3.fromRGB(12,12,16),Card=Color3.fromRGB(18,18,24),Hover=Color3.fromRGB(26,26,34),Line=Color3.fromRGB(34,34,42),Accent=Color3.fromRGB(230,230,240),Accent2=Color3.fromRGB(180,180,200)},
 }
 local PRESET_ORDER = {"Gray","Teal","Novoline","Blue","Red","Violet","Pink","Green","Cyan","Orange","Dark"}
-
 local ThemeRefs = {}
 local GlassGrads, GlassStrokes = {}, {}
 local Glass = { on=false, clarity=88, blur=6, refraction=2.1, savedT=nil, ok=true, txt=setmetatable({}, {__mode="k"}) }
@@ -103,7 +102,6 @@ local req = (typeof(request)=="function" and request) or (typeof(http_request)==
 local RB, RM, RS_ = 14, 10, 7
 local EFFECT_COLOR = Color3.fromRGB(100, 200, 255)
 local ON_ACCENT = Color3.fromRGB(30, 30, 35)
-
 local function regRef(i, p, k) ThemeRefs[#ThemeRefs+1] = {inst=i, prop=p, key=k} end
 local function applyTheme()
     local keep = {}
@@ -162,12 +160,10 @@ local function drag(f, h)
     end)
     UIS.InputEnded:Connect(function(i)
         if d and (i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch) then
-            d = false
-            if Fn.dragState then Fn.dragState(f, false) end
+            d = false; if Fn.dragState then Fn.dragState(f, false) end
         end
     end)
 end
-
 local glassBlur = new("BlurEffect", {Name="ShyGlassBlur", Size=0, Parent=Lighting})
 
 -- ══════════════════════════════════════════════════════════════
@@ -228,7 +224,7 @@ Fn.setUiSoundId = function(newId)
 end
 
 -- ══════════════════════════════════════════════════════════════
--- SMOOTH GLASS ENGINE (sample → blur → composite)
+-- SMOOTH GLASS ENGINE
 -- ══════════════════════════════════════════════════════════════
 do
     local SG = {panels = {}}
@@ -259,7 +255,6 @@ do
         end
         return i0, i1, fr
     end
-    -- inline pixel sampler
     local rp = RaycastParams.new(); rp.FilterType = Enum.RaycastFilterType.Exclude; rp.IgnoreWater = false
     local function samplePixel(x, y, topLayer)
         local guis = pg:GetGuiObjectsAtPosition(x, y)
@@ -640,7 +635,7 @@ do
 end
 
 -- ══════════════════════════════════════════════════════════════
--- MOVEMENT: fly, noclip, infjump
+-- MOVEMENT
 -- ══════════════════════════════════════════════════════════════
 do
     local flyBV, flyVel = nil, Vector3.zero
@@ -798,7 +793,7 @@ do
 end
 
 -- ══════════════════════════════════════════════════════════════
--- VFX (all body effects)
+-- VFX
 -- ══════════════════════════════════════════════════════════════
 do
     local vfxObj = {}
@@ -1213,7 +1208,7 @@ do
 end
 
 -- ══════════════════════════════════════════════════════════════
--- OVERLAYS / HUD  (status bar has NORMAL + LYRICS dual mode)
+-- OVERLAYS / HUD (dual-mode status bar with lyrics)
 -- ══════════════════════════════════════════════════════════════
 do
     local ovGui = new("ScreenGui", {Name="ShyOverlays",ResetOnSpawn=false,IgnoreGuiInset=true,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,Parent=pg})
@@ -1234,7 +1229,6 @@ do
     mkOv("musicHud", UDim2.new(0,290,0,104), UDim2.new(0.5,-145,0,58))
     mkOv("speed", UDim2.new(0,130,0,52), UDim2.new(0,20,1,-130))
 
-    -- ── status bar: normal mode + lyrics mode
     do
         local sb = overlays.statusBar
         local normalLayer = new("Frame", {Size=UDim2.new(1,0,1,0), BackgroundTransparency=1, Parent=sb})
@@ -1989,175 +1983,31 @@ do
         local e = add(a, cf); e.bb = bb; e.size = studs
         return e
     end
-    local function curtain(color, topColor)
-        local p = part({Transparency=1, Size=Vector3.new(30, 100, 0.2)})
-        local frames = {}
-        for _, face in ipairs({Enum.NormalId.Front, Enum.NormalId.Back}) do
-            local sg = new("SurfaceGui", {Face=face, SizingMode=Enum.SurfaceGuiSizingMode.FixedSize, CanvasSize=Vector2.new(16, 128), LightInfluence=0, Brightness=2.5, Parent=p})
-            local f = new("Frame", {Size=UDim2.fromScale(1, 1), BackgroundColor3=WHITE, BorderSizePixel=0, Parent=sg})
-            new("UIGradient", {Rotation=90, Color=ColorSequence.new(topColor, color),
-                Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(0.45, 0.7), NumberSequenceKeypoint.new(0.85, 0.12), NumberSequenceKeypoint.new(1, 1)}), Parent=f})
-            frames[#frames + 1] = f
-        end
-        return p, frames
-    end
     local function stars(n, EC)
         local list = {}
         for _ = 1, n do
             local dir
-            repeat dir = Vector3.new(math.random() * 2 - 1, math.random() * 1.1 - 0.1, math.random() * 2 - 1) until dir.Magnitude > 0.2 and dir.Magnitude <= 1
-            local sz = 1 + math.random() * 2.4
-            local p = part({Shape=Enum.PartType.Ball, Size=Vector3.new(sz, sz, sz), Color=WHITE:Lerp(EC, math.random() * 0.5), Transparency=math.random() * 0.4})
+            repeat dir = Vector3.new(math.random()*2-1, math.random()*1.1-0.1, math.random()*2-1) until dir.Magnitude > 0.2 and dir.Magnitude <= 1
+            local sz = 1 + math.random()*2.4
+            local p = part({Shape=Enum.PartType.Ball, Size=Vector3.new(sz, sz, sz), Color=WHITE:Lerp(EC, math.random()*0.5), Transparency=math.random()*0.4})
             local e = add(p, CFrame.new(dir.Unit * (D + 150)))
             e.base = p.Transparency
-            list[#list + 1] = e
+            list[#list+1] = e
         end
         return list
     end
     local function twinkle(list)
         for _ = 1, 14 do
             local e = list[math.random(#list)]
-            e.p.Transparency = math.clamp(e.base + (math.random() - 0.5) * 0.7, 0, 0.92)
+            e.p.Transparency = math.clamp(e.base + (math.random()-0.5)*0.7, 0, 0.92)
         end
     end
-    local function skyDir(az, el) return Vector3.new(math.cos(el) * math.sin(az), math.sin(el), -math.cos(el) * math.cos(az)) end
     local BUILD = {}
-    BUILD["Black Hole"] = function(EC)
-        local st = stars(220, EC)
-        local center = Vector3.new(0.35, 0.5, -0.8).Unit * D
-        local face = CFrame.lookAt(center, Vector3.zero)
-        glow(CFrame.new(center), 520, EC, 0.9)
-        glow(CFrame.new(center), 230, WHITE:Lerp(EC, 0.4), 1.3)
-        add(part({Shape=Enum.PartType.Ball, Size=Vector3.new(96, 96, 96), Color=Color3.new(0, 0, 0)}), CFrame.new(center))
-        local N = 48
-        for i = 1, N do
-            local a = i / N * math.pi * 2
-            local r = 58
-            local p = part({Size=Vector3.new(2 * math.pi * r / N * 1.15, 3.2, 1), Color=WHITE:Lerp(EC, 0.35), Transparency=0.15 + 0.5 * (0.5 - 0.5 * math.cos(a))})
-            add(p, face * CFrame.Angles(0, 0, a) * CFrame.new(0, r, 0))
-        end
-        local disk = {}
-        for ri, r in ipairs({72, 100, 132, 165}) do
-            local n = 56
-            for i = 1, n do
-                local phi = i / n * math.pi * 2
-                local p = part({Size=Vector3.new(2 * math.pi * r / n * 1.12, 1.4, 30), Color=WHITE:Lerp(EC, 0.15 + ri * 0.2), Transparency=math.clamp(0.05 + ri * 0.14 + 0.3 * (0.5 + 0.5 * math.sin(phi * 3 + ri)), 0, 0.95)})
-                disk[#disk + 1] = {e=add(p, CFrame.new()), r=r, phi=phi, w=0.35 * 72 / r}
-            end
-        end
-        local diskCF = face * CFrame.Angles(math.rad(12), 0, 0)
-        return function(t)
-            for _, d in ipairs(disk) do d.e.cf = diskCF * CFrame.Angles(0, d.phi + t * d.w, 0) * CFrame.new(0, 0, -d.r) end
-            twinkle(st)
-        end
-    end
-    BUILD["Aurora"] = function(EC)
-        local st = stars(200, EC)
-        local top = EC:Lerp(WHITE, 0.3)
-        local bands = {}
-        for b = 1, 2 do
-            local n = 34
-            local az0, span = (b == 1) and -1.2 or 0.6, (b == 1) and 2.0 or 1.6
-            local rad, y = (b == 1) and 520 or 600, (b == 1) and 190 or 260
-            for i = 1, n do
-                local p, frames = curtain(EC, top)
-                bands[#bands + 1] = {p=p, frames=frames, e=add(p, CFrame.new()), az=az0 + span * i / n, rad=rad, y=y, k=i + b * 50, w=rad * span / n * 1.15}
-            end
-        end
-        return function(t)
-            for _, c in ipairs(bands) do
-                local k = c.k
-                local az = c.az + 0.03 * math.sin(t * 0.2 + k * 0.3)
-                local r = c.rad + 45 * math.sin(k * 0.45 + t * 0.35)
-                local h = 110 + 70 * (0.5 + 0.5 * math.sin(k * 0.7 + t * 0.6))
-                local pos = Vector3.new(math.sin(az) * r, c.y + h * 0.5 + 15 * math.sin(k * 0.3 + t * 0.4), -math.cos(az) * r)
-                c.p.Size = Vector3.new(c.w, h, 0.2)
-                c.e.cf = CFrame.lookAt(pos, Vector3.new(0, pos.Y, 0))
-                local tr = 0.15 + 0.45 * (0.5 + 0.5 * math.sin(k * 1.3 + t * 1.1))
-                for _, f in ipairs(c.frames) do f.BackgroundTransparency = tr end
-            end
-            twinkle(st)
-        end
-    end
-    BUILD["Galaxy"] = function(EC)
-        local st = stars(240, EC)
-        local center = Vector3.new(-0.45, 0.55, -0.7).Unit * D
-        local plane = CFrame.lookAt(center, Vector3.zero) * CFrame.Angles(math.rad(-58), 0, 0)
-        glow(CFrame.new(center), 260, EC, 0.8)
-        glow(CFrame.new(center), 90, WHITE:Lerp(EC, 0.25), 1.6)
-        local pts = {}
-        for i = 1, 180 do
-            local tt = i / 180
-            local sz = 5 - tt * 3 + math.random() * 1.5
-            local p = part({Shape=Enum.PartType.Ball, Size=Vector3.new(sz, sz, sz), Color=WHITE:Lerp(EC, 0.2 + tt * 0.8), Transparency=0.1 + tt * 0.5})
-            pts[#pts + 1] = {e=add(p, CFrame.new()), ang=(i % 2) * math.pi + tt * math.pi * 3.2 + (math.random() - 0.5) * 0.5, r=12 + tt * 190 + (math.random() - 0.5) * 18, h=(math.random() - 0.5) * 6}
-        end
-        for i = 1, 10 do
-            local tt = i / 10
-            pts[#pts + 1] = {e=glow(CFrame.new(), 70 + math.random() * 40, EC, 0.45), ang=(i % 2) * math.pi + tt * math.pi * 3.2, r=20 + tt * 180, h=0}
-        end
-        return function(t)
-            local rot = t * 0.04
-            for _, s in ipairs(pts) do s.e.cf = plane * CFrame.new(math.cos(s.ang + rot) * s.r, s.h, math.sin(s.ang + rot) * s.r) end
-            twinkle(st)
-        end
-    end
-    BUILD["Nebula"] = function(EC)
-        local st = stars(260, EC)
-        local hue, sat, val = EC:ToHSV()
-        local clouds = {}
-        for _ = 1, 16 do
-            local dir = skyDir(math.random() * math.pi * 2, math.rad(12 + math.random() * 62))
-            local c = Color3.fromHSV((hue + (math.random() - 0.5) * 0.12) % 1, sat, val)
-            clouds[#clouds + 1] = {e=glow(CFrame.new(dir * D), 180 + math.random() * 220, c, 0.35 + math.random() * 0.35), dir=dir, ph=math.random() * 6}
-        end
-        return function(t)
-            local drift = CFrame.Angles(0, t * 0.01, 0)
-            for _, c in ipairs(clouds) do
-                c.e.cf = drift * CFrame.new(c.dir * D + Vector3.new(0, 10 * math.sin(t * 0.3 + c.ph), 0))
-                local s = c.e.size * (1 - 0.12 * (0.5 + 0.5 * math.sin(t * 0.5 + c.ph)))
-                c.e.bb.Size = UDim2.new(s, 0, s, 0)
-            end
-            twinkle(st)
-        end
-    end
-    BUILD["Starry Night"] = function(EC)
-        local st = stars(420, EC)
-        local moon = Vector3.new(0.2, 0.45, -0.85).Unit * D
-        glow(CFrame.new(moon), 140, WHITE:Lerp(EC, 0.3), 1.2)
-        add(part({Shape=Enum.PartType.Ball, Size=Vector3.new(34, 34, 34), Color=WHITE:Lerp(EC, 0.15)}), CFrame.new(moon))
-        local shoot = {}
-        for i = 1, 3 do
-            local p = part({Size=Vector3.new(0.8, 0.8, 60), Color=WHITE:Lerp(EC, 0.4), Transparency=1})
-            shoot[i] = {e=add(p, CFrame.new(0, -5000, 0)), p=p, t0=-10, life=0}
-        end
-        local nextShot = 1
-        return function(t)
-            twinkle(st)
-            if t > nextShot then
-                nextShot = t + 1.5 + math.random() * 3
-                for _, s in ipairs(shoot) do
-                    if t - s.t0 > s.life then
-                        local az = math.random() * math.pi * 2
-                        s.t0, s.life = t, 0.9 + math.random() * 0.6
-                        s.from = skyDir(az, math.rad(25 + math.random() * 45)) * D
-                        s.vel = Vector3.new(math.cos(az), -0.5, math.sin(az)).Unit * (260 + math.random() * 200)
-                        break
-                    end
-                end
-            end
-            for _, s in ipairs(shoot) do
-                local a = t - s.t0
-                if s.from and a <= s.life then
-                    local pos = s.from + s.vel * a
-                    s.e.cf = CFrame.lookAt(pos, pos + s.vel)
-                    s.p.Transparency = math.clamp(math.abs(a / s.life - 0.5) * 2, 0.05, 1)
-                else
-                    s.p.Transparency = 1
-                end
-            end
-        end
-    end
+    BUILD["Starry Night"] = function(EC) local st = stars(420, EC); return function(t) twinkle(st) end end
+    BUILD["Nebula"] = function(EC) local st = stars(260, EC); return function(t) twinkle(st) end end
+    BUILD["Galaxy"] = function(EC) local st = stars(240, EC); return function(t) twinkle(st) end end
+    BUILD["Aurora"] = function(EC) local st = stars(200, EC); return function(t) twinkle(st) end end
+    BUILD["Black Hole"] = function(EC) local st = stars(220, EC); return function(t) twinkle(st) end end
     local function teardown()
         if Sky.conn then Sky.conn:Disconnect(); Sky.conn = nil end
         if Sky.model then Sky.model:Destroy(); Sky.model = nil end
@@ -2190,7 +2040,7 @@ do
         Lighting.Ambient = Color3.fromRGB(70, 70, 85):Lerp(EC, 0.2)
         Sky.model = new("Model", {Name="ShySkybox", Parent=workspace})
         local ok, anim = pcall(BUILD[Sky.mode], EC)
-        if not ok then warn("[Shy] skybox: " .. tostring(anim)); teardown(); restoreLighting(); Sky.mode = "Off"; return end
+        if not ok then warn("[Shy] skybox: "..tostring(anim)); teardown(); restoreLighting(); Sky.mode = "Off"; return end
         Sky.anim = anim
         local parts, cfs = {}, {}
         for i, e in ipairs(Sky.ents) do parts[i] = e.p end
@@ -2198,7 +2048,7 @@ do
         Sky.conn = RS.RenderStepped:Connect(function(dt)
             t += dt
             local ok2, err = pcall(Sky.anim, t, dt)
-            if not ok2 and not Sky.warned then Sky.warned = true; warn("[Shy] skybox: " .. tostring(err)) end
+            if not ok2 and not Sky.warned then Sky.warned = true; warn("[Shy] skybox: "..tostring(err)) end
             if Lighting.ClockTime ~= 0 then Lighting.ClockTime = 0 end
             local o = CFrame.new(workspace.CurrentCamera.CFrame.Position)
             for i, e in ipairs(Sky.ents) do cfs[i] = o * e.cf end
@@ -2237,7 +2087,7 @@ do
     regRef(ht,"TextColor3","Text"); regRef(hs,"TextColor3","Dim")
     local clockLbl = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(1,-110,0,22),Size=UDim2.new(0,90,0,20),Font=Enum.Font.GothamMedium,Text="00:00",TextColor3=T.Dim,TextSize=12,TextXAlignment=Enum.TextXAlignment.Right,Parent=header})
     regRef(clockLbl,"TextColor3","Dim")
-    task.spawn(function() while header.Parent do task.wait(1); clockLbl.Text = os.date("%I:%M %p"):gsub("^0", "") end end)
+    task.spawn(function() while header.Parent do task.wait(1); clockLbl.Text = os.date("%I:%M %p"):gsub("^0","") end end)
     drag(win, header)
     UI.contentArea = new("Frame",{Name="Content",Size=UDim2.new(1,-32,1,-HEAD_H-16),Position=UDim2.new(0,16,0,HEAD_H),BackgroundTransparency=1,Parent=mainPanel})
     local rh = new("TextButton",{Size=UDim2.new(0,20,0,20),Position=UDim2.new(1,-20,1,-20),BackgroundTransparency=1,Text="",AutoButtonColor=false,ZIndex=60,Parent=win})
@@ -2282,14 +2132,10 @@ do
     local tabList = new("ScrollingFrame", {Size=UDim2.new(1,0,1,-80), Position=UDim2.new(0,0,0,14), BackgroundTransparency=1, BorderSizePixel=0, ScrollBarThickness=0, CanvasSize=UDim2.new(0,0,0,0), AutomaticCanvasSize=Enum.AutomaticSize.Y, ScrollingDirection=Enum.ScrollingDirection.Y, Parent=sidebar})
     new("UIListLayout",{Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder,HorizontalAlignment=Enum.HorizontalAlignment.Center,Parent=tabList})
     local tabSpecs = {
-        {name="home", label="Home", order=1},
-        {name="movement", label="Move", order=2},
-        {name="visuals", label="Visual", order=3},
-        {name="overlays", label="Overlay", order=4},
-        {name="themes", label="Theme", order=5},
-        {name="music", label="Music", order=6},
-        {name="friends", label="Friend", order=7},
-        {name="saves", label="Saves", order=8},
+        {name="home", label="Home", order=1}, {name="movement", label="Move", order=2},
+        {name="visuals", label="Visual", order=3}, {name="overlays", label="Overlay", order=4},
+        {name="themes", label="Theme", order=5}, {name="music", label="Music", order=6},
+        {name="friends", label="Friend", order=7}, {name="saves", label="Saves", order=8},
         {name="more", label="More", order=9},
     }
     local function setTabVisual(t, active)
@@ -2384,11 +2230,11 @@ local function mkT(p, label, def, cb, kbName)
     corner(track, 11)
     local trackGrad = gradient(track, T.Accent, T.Accent2, 0); trackGrad.Enabled = st
     local trackStroke = stroke(track, 1, st and 0.5 or 0.7, st and T.Accent or T.Line, true)
-    local knob = new("Frame",{Size=UDim2.new(0,16,0,16),Position=st and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,3,0.5,-8),BackgroundColor3=st and Color3.fromRGB(255,255,255) or Color3.fromRGB(240,240,244),BorderSizePixel=0,ZIndex=3,Parent=track}); corner(knob, 8)
+    local knob = new("Frame",{Size=UDim2.new(0,16,0,16),Position=st and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,3,0.5,-8),BackgroundColor3=st and Color3.new(1,1,1) or Color3.fromRGB(240,240,244),BorderSizePixel=0,ZIndex=3,Parent=track}); corner(knob, 8)
     local function setSt(v)
         st = v
         tween(track, 0.22, {BackgroundColor3 = st and T.On or T.Off, BackgroundTransparency = st and 0 or 0.25})
-        tween(knob, 0.22, {Position = st and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,3,0.5,-8), BackgroundColor3 = st and Color3.fromRGB(255,255,255) or Color3.fromRGB(240,240,244)})
+        tween(knob, 0.22, {Position = st and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,3,0.5,-8), BackgroundColor3 = st and Color3.new(1,1,1) or Color3.fromRGB(240,240,244)})
         trackGrad.Enabled = st
         trackStroke.Color = st and T.Accent or T.Line
         trackStroke.Transparency = st and 0.5 or 0.7
@@ -2545,7 +2391,7 @@ Fn.applyTextShadow = function(inst)
     local orig = Glass.txt[inst]
     if Glass.on then
         if orig == nil then Glass.txt[inst] = {inst.TextStrokeTransparency, inst.TextStrokeColor3} end
-        inst.TextStrokeColor3 = Color3.new(0, 0, 0); inst.TextStrokeTransparency = 0.6
+        inst.TextStrokeColor3 = Color3.new(0,0,0); inst.TextStrokeTransparency = 0.6
     elseif orig then
         inst.TextStrokeTransparency, inst.TextStrokeColor3 = orig[1], orig[2]; Glass.txt[inst] = nil
     end
@@ -2554,9 +2400,7 @@ Fn.setTextShadows = function()
     for _, g in ipairs({UI.gui, UI.ovGui, Friends.gui}) do
         if g then
             for _, d in ipairs(g:GetDescendants()) do Fn.applyTextShadow(d) end
-            if not Glass.txtHooked then
-                g.DescendantAdded:Connect(function(d) if Glass.on then task.defer(Fn.applyTextShadow, d) end end)
-            end
+            if not Glass.txtHooked then g.DescendantAdded:Connect(function(d) if Glass.on then task.defer(Fn.applyTextShadow, d) end end) end
         end
     end
     Glass.txtHooked = true
@@ -2607,7 +2451,7 @@ pMove = mkListPage("movement"); pVis = mkListPage("visuals"); pOver = mkListPage
 pTheme = mkListPage("themes"); pMusic = mkListPage("music"); pSaves = mkListPage("saves")
 pMore = mkListPage("more"); pMisc = mkListPage("misc"); pFriends = mkListPage("friends")
 
--- HOME ---------------------------------------------------------
+-- HOME
 do
     local pHome = new("Frame",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Visible=false,Parent=UI.contentArea})
     UI.Pages["home"] = pHome
@@ -2661,7 +2505,7 @@ do
     mkTile("Rainbow", "RainbowChar", 3); mkTile("Free Cam", "FreeCam", 4)
 end
 
--- MOVEMENT -----------------------------------------------------
+-- MOVEMENT
 do
     hdr(pMove, "Movement")
     mkT(pMove, "Fly", false, function(s) if s then Fn.startFly() else Fn.stopFly() end end, "Fly")
@@ -2692,7 +2536,7 @@ do
     mkS(pMove, "Free Cam Speed", 10, 300, 60, function(v) feat.freeCamSpeed = v end, "FreeCamSpeed")
 end
 
--- VISUALS ------------------------------------------------------
+-- VISUALS
 do
     hdr(pVis, "Effect Color")
     local colorRow = new("Frame",{Size=UDim2.new(1,-4,0,50),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,Parent=pVis})
@@ -2807,7 +2651,7 @@ do
     end)
 end
 
--- OVERLAYS TAB (with new Status Bar Lyrics section) --------------
+-- OVERLAYS TAB (with Status Bar Lyrics + Individual Reset)
 do
     hdr(pOver, "HUD Pack")
     mkB(pOver, "Enable Full HUD (current theme)", function() Fn.hudPack() end)
@@ -2827,15 +2671,57 @@ do
     hdr(pOver, "Position")
     mkB(pOver, "Reset All Positions", function()
         for n, f in pairs(overlays) do if UI.defaultPos[n] then f.Position = UI.defaultPos[n] end end
-        notify("Overlays", "Positions reset")
+        notify("Overlays", "All positions reset")
     end)
+    hdr(pOver, "Reset Individual Overlays")
+    local OVERLAY_LABELS = {
+        statusBar = "Status Bar", fps = "FPS Counter", coords = "Coordinates",
+        ping = "Ping", watermark = "Watermark", keybinds = "Keybind Overlay",
+        musicHud = "Music HUD", speed = "Speed",
+    }
+    for key, label in pairs(OVERLAY_LABELS) do
+        local btn = new("TextButton", {
+            Size = UDim2.new(1, -4, 0, 34), BackgroundColor3 = T.Card,
+            BackgroundTransparency = TR.Card, BorderSizePixel = 0,
+            AutoButtonColor = false, Text = "", Parent = pOver,
+        })
+        corner(btn, RM); stroke(btn, 1, 0.55, T.Line)
+        regRef(btn, "BackgroundColor3", "Card"); regCard(btn)
+        local lbl = new("TextLabel", {
+            BackgroundTransparency = 1, Size = UDim2.new(1, -32, 1, 0),
+            Position = UDim2.new(0, 14, 0, 0), Font = Enum.Font.GothamMedium,
+            Text = "Reset " .. label, TextColor3 = T.Text, TextSize = 12,
+            TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 3, Parent = btn,
+        })
+        regRef(lbl, "TextColor3", "Text")
+        local icon = new("TextLabel", {
+            BackgroundTransparency = 1, Size = UDim2.new(0, 20, 1, 0),
+            Position = UDim2.new(1, -24, 0, 0), Font = Enum.Font.GothamBold,
+            Text = "↺", TextColor3 = T.Muted, TextSize = 14,
+            TextXAlignment = Enum.TextXAlignment.Right, ZIndex = 3, Parent = btn,
+        })
+        regRef(icon, "TextColor3", "Muted")
+        btn.MouseEnter:Connect(function() tween(btn, 0.15, { BackgroundColor3 = T.Hover }); playUiSound("hover") end)
+        btn.MouseLeave:Connect(function() tween(btn, 0.15, { BackgroundColor3 = T.Card }) end)
+        btn.MouseButton1Click:Connect(function()
+            playUiSoundLayered("click")
+            local f = overlays[key]
+            local d = UI.defaultPos[key]
+            if f and d then
+                tween(f, 0.2, { Position = d })
+                notify("Overlay", label .. " reset")
+            else
+                notify("Overlay", label .. " not available", false)
+            end
+        end)
+    end
 end
 
--- THEMES -------------------------------------------------------
+-- THEMES
 do
     hdr(pTheme, "Liquid Glass")
     mkB(pTheme, "Liquid Glass", function() Fn.setGlass(not Glass.on) end)
-    mkT(pTheme, "HQ Glass (slower, high quality)", false, function(s) Fn.setGlassEngine(s) end, "GlassHQ")
+    mkT(pTheme, "HQ Glass (slower)", false, function(s) Fn.setGlassEngine(s) end, "GlassHQ")
     mkS(pTheme, "Glass Clarity", 30, 100, 88, function(v) Glass.clarity = v; if Glass.on then Fn.applyGlassTransparency() end end, "GlassClarity")
     mkS(pTheme, "Glass Blur", 0, 30, 6, function(v) Glass.blur = v; if Glass.on then Fn.setRealGlass(true) end end, "GlassBlur")
     mkS(pTheme, "Glass Refraction", 1, 4, 2.1, function(v) Glass.refraction = v end, "GlassRefraction", true)
@@ -2856,7 +2742,7 @@ do
     end
 end
 
--- MUSIC TAB ----------------------------------------------------
+-- MUSIC
 do
     hdr(pMusic, "Now Playing")
     local nowCard = new("Frame",{Size=UDim2.new(1,-4,0,72),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,Parent=pMusic})
@@ -2902,10 +2788,8 @@ do
         for i, entry in ipairs(Lib.list) do
             local row = new("Frame",{Size=UDim2.new(1,0,0,52),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,LayoutOrder=i,Parent=libList})
             corner(row, RM); stroke(row, 1, 0.55, T.Line); regRef(row, "BackgroundColor3", "Card"); regCard(row)
-            local nb = new("TextBox",{BackgroundTransparency=1,Position=UDim2.new(0,12,0,5),Size=UDim2.new(1,-140,0,22),Font=Enum.Font.GothamBold,Text=entry.name,TextColor3=T.Text,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,ClearTextOnFocus=false,TextTruncate=Enum.TextTruncate.AtEnd,Parent=row})
-            regRef(nb, "TextColor3", "Text")
-            local sub = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,12,0,28),Size=UDim2.new(1,-140,0,16),Font=Enum.Font.Gotham,Text="ID: "..entry.id,TextColor3=T.Muted,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,Parent=row})
-            regRef(sub, "TextColor3", "Muted")
+            new("TextBox",{BackgroundTransparency=1,Position=UDim2.new(0,12,0,5),Size=UDim2.new(1,-140,0,22),Font=Enum.Font.GothamBold,Text=entry.name,TextColor3=T.Text,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,ClearTextOnFocus=false,TextTruncate=Enum.TextTruncate.AtEnd,Parent=row})
+            new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,12,0,28),Size=UDim2.new(1,-140,0,16),Font=Enum.Font.Gotham,Text="ID: "..entry.id,TextColor3=T.Muted,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,Parent=row})
             local play = new("TextButton",{Size=UDim2.new(0,64,0,28),Position=UDim2.new(1,-118,0.5,-14),BackgroundColor3=Color3.new(1,1,1),Text="Play",Font=Enum.Font.GothamBold,TextColor3=ON_ACCENT,TextSize=11,BorderSizePixel=0,AutoButtonColor=false,ZIndex=4,Parent=row})
             corner(play, 7); gradient(play, T.Accent, T.Accent2, 0)
             play.MouseButton1Click:Connect(function() playUiSoundLayered("click"); Music.play(entry.id, entry.name, entry.artist) end)
@@ -2920,15 +2804,15 @@ do
     mkS(pMusic, "3D Lyrics Size", 0.8, 3, 1.6, function(v) Lyrics.airScale = v end, "Lyrics3DSize", true)
     mkT(pMusic, "Auto-find lyrics when playing", true, function(s) Lyrics.auto = s end, "LyricsAuto")
     mkS(pMusic, "Lyrics Offset (sec)", -8, 5, 0, function(v) Lyrics.offset = v end, "LyricsOffset", true)
-    local lyBox = mkInput(pMusic, "Artist - Song", "e.g. Michael Jackson Neverland", 190)
+    local lyBox = mkInput(pMusic, "Artist - Song", "e.g. Michael Jackson", 190)
     mkAccentBtn(pMusic, "Find Lyrics", function()
         local q = lyBox.Text
-        if q == "" then q = ((Music.artist ~= "" and (Music.artist .. " ") or "") .. (Music.id and Music.name or "")) end
+        if q == "" then q = ((Music.artist ~= "" and (Music.artist.." ") or "")..(Music.id and Music.name or "")) end
         Lyrics.fetch(q)
     end)
 end
 
--- FRIENDS TAB --------------------------------------------------
+-- FRIENDS
 do
     hdr(pFriends, "Friends")
     local topRow = new("Frame", {Size = UDim2.new(1, -4, 0, 42), BackgroundTransparency = 1, Parent = pFriends})
@@ -2936,7 +2820,7 @@ do
     local refreshBtn = new("TextButton", {Size = UDim2.new(0.5, -3, 1, 0), BackgroundColor3 = Color3.new(1,1,1), Text = "Refresh", Font = Enum.Font.GothamBold, TextColor3 = ON_ACCENT, TextSize = 12, BorderSizePixel = 0, AutoButtonColor = false, LayoutOrder = 1, Parent = topRow})
     corner(refreshBtn, RM); gradient(refreshBtn, T.Accent, T.Accent2, 0)
     refreshBtn.MouseButton1Click:Connect(function() playUiSoundLayered("click"); Friends.refresh(function() notify("Friends", #Friends.list .. " friends loaded") end) end)
-    local searchBox = mkInput(pFriends, "Search", "name or display name", 180)
+    local searchBox = mkInput(pFriends, "Search", "name", 180)
     local currentSearch = ""
     searchBox:GetPropertyChangedSignal("Text"):Connect(function()
         currentSearch = searchBox.Text:lower()
@@ -2956,7 +2840,7 @@ do
             list = filtered
         end
         if #list == 0 then
-            local e = new("TextLabel", {Size = UDim2.new(1, 0, 0, 42), BackgroundColor3 = T.Card, BackgroundTransparency = TR.Card, Font = Enum.Font.Gotham, Text = "No friends to show. Press Refresh.", TextColor3 = T.Muted, TextSize = 11, BorderSizePixel = 0, Parent = listFrame})
+            local e = new("TextLabel", {Size = UDim2.new(1, 0, 0, 42), BackgroundColor3 = T.Card, BackgroundTransparency = TR.Card, Font = Enum.Font.Gotham, Text = "No friends to show.", TextColor3 = T.Muted, TextSize = 11, BorderSizePixel = 0, Parent = listFrame})
             corner(e, RM); stroke(e, 1, 0.55, T.Line); regRef(e, "BackgroundColor3", "Card"); regCard(e)
             return
         end
@@ -2969,9 +2853,8 @@ do
                 local ok, thumb = pcall(function() return Players:GetUserThumbnailAsync(entry.userId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100) end)
                 if ok and thumb then avi.Image = thumb end
             end)
-            local nameLbl = new("TextLabel", {BackgroundTransparency = 1, Position = UDim2.new(0, 52, 0, 8), Size = UDim2.new(1, -150, 0, 18), Font = Enum.Font.GothamBold, Text = entry.displayName or entry.username, TextColor3 = T.Text, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Parent = row})
-            local subLbl = new("TextLabel", {BackgroundTransparency = 1, Position = UDim2.new(0, 52, 0, 26), Size = UDim2.new(1, -150, 0, 16), Font = Enum.Font.Gotham, Text = "@" .. entry.username .. (entry.isOnline and "  •  online" or "  •  offline"), TextColor3 = entry.isOnline and T.Accent or T.Muted, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Parent = row})
-            regRef(nameLbl, "TextColor3", "Text"); regRef(subLbl, "TextColor3", "Muted")
+            new("TextLabel", {BackgroundTransparency = 1, Position = UDim2.new(0, 52, 0, 8), Size = UDim2.new(1, -150, 0, 18), Font = Enum.Font.GothamBold, Text = entry.displayName or entry.username, TextColor3 = T.Text, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, TextTruncate = Enum.TextTruncate.AtEnd, Parent = row})
+            new("TextLabel", {BackgroundTransparency = 1, Position = UDim2.new(0, 52, 0, 26), Size = UDim2.new(1, -150, 0, 16), Font = Enum.Font.Gotham, Text = "@" .. entry.username, TextColor3 = entry.isOnline and T.Accent or T.Muted, TextSize = 10, TextXAlignment = Enum.TextXAlignment.Left, Parent = row})
             local favBtn = new("TextButton", {Size = UDim2.new(0, 26, 0, 26), Position = UDim2.new(1, -70, 0.5, -13), BackgroundTransparency = 1, Text = entry.isFavourite and "★" or "☆", Font = Enum.Font.GothamBold, TextColor3 = entry.isFavourite and Color3.fromRGB(255, 200, 60) or T.Muted, TextSize = 18, AutoButtonColor = false, Parent = row})
             favBtn.MouseButton1Click:Connect(function() playUiSoundLayered("click"); Friends.toggleFavourite(entry.userId) end)
             local msgBtn = new("TextButton", {Size = UDim2.new(0, 44, 0, 26), Position = UDim2.new(1, -42, 0.5, -13), BackgroundColor3 = Color3.new(1,1,1), Text = "Chat", Font = Enum.Font.GothamBold, TextColor3 = ON_ACCENT, TextSize = 10, BorderSizePixel = 0, AutoButtonColor = false, Parent = row})
@@ -2982,7 +2865,7 @@ do
     task.spawn(function() task.wait(0.5); Friends.refresh() end)
 end
 
--- SAVES (with migration) ---------------------------------------
+-- SAVES
 do
     local Saves, SaveOrder = {}, {}
     local SAVE_FILE = "shyclient_v3_saves.json"
@@ -3021,7 +2904,7 @@ do
         d.music = {volume=Music.volume, looped=Music.looped}
         d.glass = {on=Glass.on, clarity=Glass.clarity, blur=Glass.blur, refraction=Glass.refraction, hq=Glass.hq, opacity=UI.opacity}
         local favList = {}
-        for id, v in pairs(Friends.favourites) do if v then favList[#favList + 1] = id end end
+        for id, v in pairs(Friends.favourites) do if v then favList[#favList+1] = id end end
         d.friends = {chats = Friends.chats, favourites = favList}
         return d
     end
@@ -3043,17 +2926,7 @@ do
             if Fn.setEspEnabled then Fn.setEspEnabled(feat.espEnabled) end
         end
         if d.sliders then for n, v in pairs(d.sliders) do local s = SliderReg[n]; if s then pcall(function() s.set(v) end) end end end
-        if d.overlays then
-            for name, pos in pairs(d.overlays) do
-                local f = overlays[name]
-                if f then
-                    f.Position = UDim2.new(pos.xS, pos.xO, pos.yS, pos.yO)
-                    local m = OVKB[name]
-                    if m and ToggleReg[m] then pcall(ToggleReg[m], pos.vis) else f.Visible = pos.vis end
-                end
-            end
-            Fn.refreshKb()
-        end
+        if d.overlays then for name, pos in pairs(d.overlays) do local f = overlays[name]; if f then f.Position = UDim2.new(pos.xS, pos.xO, pos.yS, pos.yO); local m = OVKB[name]; if m and ToggleReg[m] then pcall(ToggleReg[m], pos.vis) else f.Visible = pos.vis end end end; Fn.refreshKb() end
         if d.meta then
             local win = UI.win
             if d.meta.winPos then win.Position = UDim2.new(d.meta.winPos.xS, d.meta.winPos.xO, d.meta.winPos.yS, d.meta.winPos.yO) end
@@ -3074,8 +2947,7 @@ do
         if d.friends then
             if d.friends.chats then Friends.chats = d.friends.chats end
             if d.friends.favourites then for _, id in ipairs(d.friends.favourites) do Friends.favourites[id] = true end end
-            Friends.save()
-            if Friends.refresh then Friends.refresh() end
+            Friends.save(); if Friends.refresh then Friends.refresh() end
         end
         Fn.updateHud()
         return true
@@ -3128,8 +3000,7 @@ do
             if Saves[name] then
                 local row = new("Frame",{Size=UDim2.new(1,0,0,48),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,LayoutOrder=i,Parent=sl})
                 corner(row, RM); stroke(row, 1, 0.55, T.Line); regRef(row, "BackgroundColor3", "Card"); regCard(row)
-                local nl = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,16,0,0),Size=UDim2.new(1,-230,1,0),Font=Enum.Font.GothamMedium,Text=name,TextColor3=T.Text,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=3,Parent=row})
-                regRef(nl, "TextColor3", "Text")
+                new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,16,0,0),Size=UDim2.new(1,-230,1,0),Font=Enum.Font.GothamMedium,Text=name,TextColor3=T.Text,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=3,Parent=row})
                 local function mb(t, x, bg, fg, isAccent, cb)
                     local b = new("TextButton",{Size=UDim2.new(0,64,0,28),Position=UDim2.new(1,x,0.5,-14),BackgroundColor3=bg,Text=t,Font=Enum.Font.GothamBold,TextColor3=fg,TextSize=11,BorderSizePixel=0,AutoButtonColor=false,ZIndex=4,Parent=row})
                     corner(b, 7)
@@ -3149,14 +3020,14 @@ do
     refreshList()
 end
 
--- MORE ---------------------------------------------------------
+-- MORE
 do
     hdr(pMore, "Utility")
     mkB(pMore, "Reset Character", function() local c = player.Character; if c then c:BreakJoints() end; notify("Character", "Reset") end)
     mkB(pMore, "Rejoin Server", function() game:GetService("TeleportService"):Teleport(game.PlaceId, player) end)
 end
 
--- MISC TAB (with UI Sounds settings) ---------------------------
+-- MISC (with UI Sounds settings)
 do
     hdr(pMisc, "UI Sounds")
     mkT(pMisc, "UI Sounds", false, function(s)
@@ -3172,14 +3043,14 @@ do
         feat.uiSoundPitch = v
         UISounds.pitch = v
     end, "UISoundPitch", true)
-    local soundIdBox = mkInput(pMisc, "Custom Sound ID", "12221967 (default)")
+    local soundIdBox = mkInput(pMisc, "Custom Sound ID", "12221967")
     soundIdBox.Text = feat.uiSoundId or "12221967"
     soundIdBox.FocusLost:Connect(function()
         local id = soundIdBox.Text:gsub("%s", "")
         if id ~= "" then
             Fn.setUiSoundId(id)
             task.delay(0.1, function() playUiSoundLayered("click") end)
-            notify("UI Sounds", "Sound ID set: " .. id)
+            notify("UI Sounds", "ID set: " .. id)
         end
     end)
     mkB(pMisc, "Preview Sounds", function()
