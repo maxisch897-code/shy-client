@@ -1,5 +1,7 @@
 -- Shy Client v3
 -- Made by n_e_r_v_y with love
+-- Merges v3 visual/functional features into v4 base
+-- + Keystrokes/Mousestrokes overlays, Motion Blur, Glossy, FPS Boost, Realistic Shader, Custom Decal Background
 
 local UIS = game:GetService("UserInputService")
 local TS  = game:GetService("TweenService")
@@ -87,6 +89,11 @@ local feat = {
     uiSounds=false, uiSoundVolume=40, uiSoundPitch=1.0, uiSoundId="12221967",
     lyricsInStatusBar=true, smoothLyricsTransition=true, lyricsTransitionDuration=0.6,
     lyrics3d=false,
+    motionBlur=false, motionBlurStrength=1.0,
+    reflective=false, reflectiveStrength=0.5,
+    fpsBoost=false,
+    realistic=false, realisticStrength=1.0,
+    uiBackground=false, uiBackgroundId="", uiBackgroundTransparency=0.3,
 }
 
 local Music = { playing=false, volume=0.5, looped=true, id=nil, name="Nothing playing", artist="" }
@@ -103,6 +110,7 @@ local req = (typeof(request)=="function" and request) or (typeof(http_request)==
 local RB, RM, RS_ = 14, 10, 7
 local EFFECT_COLOR = Color3.fromRGB(100, 200, 255)
 local ON_ACCENT = Color3.fromRGB(30, 30, 35)
+local dragBlockers = {}
 local function regRef(i, p, k) ThemeRefs[#ThemeRefs+1] = {inst=i, prop=p, key=k} end
 local function applyTheme()
     local keep = {}
@@ -130,7 +138,7 @@ local function stroke(p, t, tr, c, skip)
     if not skip then
         if not c or c == T.Line then regRef(s, "Color", "Line") end
         local g = Instance.new("UIGradient"); g.Rotation = 45
-        g.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0,0), NumberSequenceKeypoint.new(0.35,0.8), NumberSequenceKeypoint.new(0.65,0.8), NumberSequenceKeypoint.new(1,0.05)})
+        g.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0,0),NumberSequenceKeypoint.new(0.35,0.8),NumberSequenceKeypoint.new(0.65,0.8),NumberSequenceKeypoint.new(1,0.05)})
         g.Enabled = Glass.on; g.Parent = s
         GlassStrokes[#GlassStrokes+1] = {s=s, g=g, o=s.Transparency}
         if Glass.on then s.Transparency = 0.2 end
@@ -140,7 +148,7 @@ end
 local function addSheen(f)
     local g = Instance.new("UIGradient"); g.Name="ShyGlass"; g.Rotation=35
     g.Color = ColorSequence.new(Color3.fromRGB(255,255,255), Color3.fromRGB(205,218,245))
-    g.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0,0), NumberSequenceKeypoint.new(0.5,0.12), NumberSequenceKeypoint.new(1,0.3)})
+    g.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0,0),NumberSequenceKeypoint.new(0.5,0.12),NumberSequenceKeypoint.new(1,0.3)})
     g.Enabled = Glass.on; g.Parent = f; GlassGrads[#GlassGrads+1] = g
 end
 local function regCard(f) table.insert(UI.cards, f); addSheen(f); UI.n += 1 end
@@ -149,6 +157,8 @@ local function drag(f, h)
     local d, s, sp
     h.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+            local blocker = dragBlockers[f]
+            if blocker and blocker(i.Position) then return end
             d = true; s = i.Position; sp = f.Position
             if Fn.dragState then Fn.dragState(f, true) end
         end
@@ -1307,6 +1317,206 @@ do
 end
 
 -- ══════════════════════════════════════════════════════════════
+-- MOTION BLUR
+-- ══════════════════════════════════════════════════════════════
+do
+    local mb = new("BlurEffect", {Name="ShyMotionBlur", Size=0, Enabled=false, Parent=Lighting})
+    local lastCF = camera.CFrame
+    RS.RenderStepped:Connect(function(dt)
+        if not feat.motionBlur then
+            if mb.Enabled then mb.Enabled = false end
+            lastCF = camera.CFrame
+            return
+        end
+        mb.Enabled = true
+        local cur = camera.CFrame
+        local dp = (cur.Position - lastCF.Position).Magnitude
+        local da = (cur.LookVector - lastCF.LookVector).Magnitude
+        lastCF = cur
+        local speed = dp / math.max(dt, 1/120)
+        local rotSpeed = da / math.max(dt, 1/120)
+        local target = math.clamp((speed * 0.12 + rotSpeed * 2.0) * feat.motionBlurStrength, 0, 20)
+        mb.Size = mb.Size + (target - mb.Size) * math.clamp(dt * 8, 0, 1)
+    end)
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- GLOSSY (REFLECTIVE WORLD)
+-- ══════════════════════════════════════════════════════════════
+do
+    local saved = {}
+    local conn = nil
+
+    local function skipPart(p)
+        if not p:IsA("BasePart") then return true end
+        if p:IsA("Terrain") then return true end
+        if player.Character and p:IsDescendantOf(player.Character) then return true end
+        local a = p
+        while a and a ~= workspace do
+            if a.Name and a.Name:sub(1,3) == "Shy" then return true end
+            a = a.Parent
+        end
+        return false
+    end
+
+    local function applyTo(p)
+        if skipPart(p) then return end
+        if saved[p] == nil then saved[p] = p.Reflectance end
+        pcall(function() p.Reflectance = feat.reflectiveStrength end)
+    end
+
+    local function clearAll()
+        for p, r in pairs(saved) do
+            if p and p.Parent then pcall(function() p.Reflectance = r end) end
+        end
+        table.clear(saved)
+        if conn then conn:Disconnect(); conn = nil end
+    end
+
+    Fn.applyReflective = function()
+        if not feat.reflective then clearAll(); return end
+        for _, d in ipairs(workspace:GetDescendants()) do applyTo(d) end
+        if not conn then
+            conn = workspace.DescendantAdded:Connect(function(d)
+                if feat.reflective then task.defer(function() applyTo(d) end) end
+            end)
+        end
+    end
+
+    Fn.setReflectiveStrength = function(v)
+        feat.reflectiveStrength = v
+        if feat.reflective then
+            for p in pairs(saved) do
+                if p and p.Parent then pcall(function() p.Reflectance = v end) end
+            end
+        end
+    end
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- FPS BOOST (strip all textures)
+-- ══════════════════════════════════════════════════════════════
+do
+    local savedDecals   = {}
+    local savedSA       = {}
+    local savedMeshTex  = {}
+    local conn          = nil
+
+    local function isCharacter(p)
+        return player.Character and p:IsDescendantOf(player.Character)
+    end
+    local function isShy(p)
+        local a = p
+        while a and a ~= workspace do
+            if a.Name and a.Name:sub(1, 3) == "Shy" then return true end
+            a = a.Parent
+        end
+        return false
+    end
+
+    local function stripPart(p)
+        if isCharacter(p) or isShy(p) then return end
+        for _, c in ipairs(p:GetChildren()) do
+            if c:IsA("Decal") or c:IsA("Texture") then
+                if savedDecals[c] == nil then savedDecals[c] = c.Transparency end
+                c.Transparency = 1
+            elseif c:IsA("SurfaceAppearance") then
+                savedSA[p] = savedSA[p] or {}
+                table.insert(savedSA[p], c:Clone())
+                c:Destroy()
+            end
+        end
+        if p:IsA("MeshPart") and p.TextureID ~= "" then
+            if savedMeshTex[p] == nil then savedMeshTex[p] = p.TextureID end
+            p.TextureID = ""
+        end
+        local sm = p:FindFirstChildOfClass("SpecialMesh")
+        if sm and sm.TextureId ~= "" then
+            if savedMeshTex[sm] == nil then savedMeshTex[sm] = sm.TextureId end
+            sm.TextureId = ""
+        end
+    end
+
+    local function restoreAll()
+        for d, t in pairs(savedDecals) do
+            if d and d.Parent then pcall(function() d.Transparency = t end) end
+        end
+        table.clear(savedDecals)
+        for parent, list in pairs(savedSA) do
+            if parent and parent.Parent then
+                for _, sa in ipairs(list) do
+                    pcall(function() sa.Parent = parent end)
+                end
+            end
+        end
+        table.clear(savedSA)
+        for inst, id in pairs(savedMeshTex) do
+            if inst and inst.Parent then
+                if inst:IsA("MeshPart") then
+                    pcall(function() inst.TextureID = id end)
+                else
+                    pcall(function() inst.TextureId = id end)
+                end
+            end
+        end
+        table.clear(savedMeshTex)
+        if conn then conn:Disconnect(); conn = nil end
+    end
+
+    Fn.applyFpsBoost = function()
+        if not feat.fpsBoost then restoreAll(); return end
+        for _, d in ipairs(workspace:GetDescendants()) do
+            if d:IsA("BasePart") then stripPart(d) end
+        end
+        if not conn then
+            conn = workspace.DescendantAdded:Connect(function(d)
+                if feat.fpsBoost and d:IsA("BasePart") then
+                    task.defer(function() stripPart(d) end)
+                end
+            end)
+        end
+    end
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- REALISTIC SHADER
+-- ══════════════════════════════════════════════════════════════
+do
+    local cc = new("ColorCorrectionEffect", {Name="ShyRealistic",      Enabled=false, Parent=Lighting})
+    local bl = new("BloomEffect",           {Name="ShyRealisticBloom", Enabled=false, Parent=Lighting})
+    local sr = new("SunRaysEffect",         {Name="ShyRealisticRays",  Enabled=false, Parent=Lighting})
+    local df = new("DepthOfFieldEffect",    {Name="ShyRealisticDOF",   Enabled=false, Parent=Lighting})
+
+    Fn.applyRealistic = function()
+        local on = feat.realistic
+        local k  = feat.realisticStrength or 1
+        cc.Enabled = on
+        bl.Enabled = on
+        sr.Enabled = on
+        df.Enabled = on
+        if not on then return end
+        cc.Brightness  = 0.03 * k
+        cc.Contrast    = 0.20 * k
+        cc.Saturation  = 0.25 * k
+        cc.TintColor   = Color3.fromRGB(255, 250, 240)
+        bl.Intensity   = 0.90 * k
+        bl.Size        = 26 * k
+        bl.Threshold   = 0.88
+        sr.Intensity   = 0.08 * k
+        sr.Spread      = 0.45
+        df.NearIntensity = 0
+        df.FarIntensity  = 0.18 * k
+        df.FocusDistance = 60
+        df.InFocusRadius = 30
+    end
+
+    Fn.setRealisticStrength = function(v)
+        feat.realisticStrength = v
+        if feat.realistic then Fn.applyRealistic() end
+    end
+end
+
+-- ══════════════════════════════════════════════════════════════
 -- LIGHTING
 -- ══════════════════════════════════════════════════════════════
 do
@@ -1338,7 +1548,7 @@ do
 end
 
 -- ══════════════════════════════════════════════════════════════
--- OVERLAYS / HUD (with Lyrics Bar)
+-- OVERLAYS / HUD (with Lyrics Bar + Keystrokes + Mousestrokes)
 -- ══════════════════════════════════════════════════════════════
 do
     local ovGui = new("ScreenGui", {Name="ShyOverlays",ResetOnSpawn=false,IgnoreGuiInset=true,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,Parent=pg})
@@ -1359,6 +1569,8 @@ do
     mkOv("musicHud", UDim2.new(0,290,0,104), UDim2.new(0.5,-145,0,58))
     mkOv("speed", UDim2.new(0,130,0,52), UDim2.new(0,20,1,-130))
     mkOv("lyrics", UDim2.new(0,560,0,38), UDim2.new(0.5,-280,0,12))
+    mkOv("keystrokes",  UDim2.new(0,148,0,96),  UDim2.new(0,20,0,50))
+    mkOv("mousestrokes",UDim2.new(0,140,0,106), UDim2.new(0,20,0,160))
 
     do
         local sb = overlays.statusBar
@@ -1436,6 +1648,269 @@ do
     do
         lyLbl = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(1,-24,1,0),Position=UDim2.new(0,12,0,0),Font=Enum.Font.GothamMedium,Text="",RichText=true,TextColor3=T.Text,TextSize=16,TextTruncate=Enum.TextTruncate.AtEnd,Parent=overlays.lyrics})
         regRef(lyLbl,"TextColor3","Text")
+    end
+
+    -- ══════════════ KEYSTROKES OVERLAY (resizable, keyboard only) ══════════════
+    do
+        local ks = overlays.keystrokes
+        local keyFrames = {}
+        local ksScale = new("UIScale", {Name = "KSScale", Scale = 1, Parent = ks})
+
+        local function mkKey(name, label, x, y, w, h)
+            local key = new("Frame", {
+                Size = UDim2.new(0, w, 0, h),
+                Position = UDim2.new(0, x, 0, y),
+                BackgroundColor3 = T.Card, BackgroundTransparency = 0.2,
+                BorderSizePixel = 0, Parent = ks,
+            })
+            corner(key, 5)
+            local s = stroke(key, 1, 0.5, T.Line, true)
+            local lbl = new("TextLabel", {
+                BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0),
+                Font = Enum.Font.GothamBold, Text = label,
+                TextColor3 = T.Dim, TextSize = 11, Parent = key,
+            })
+            regRef(key, "BackgroundColor3", "Card")
+            regRef(lbl, "TextColor3", "Dim")
+            keyFrames[name] = { frame = key, label = lbl, stroke = s, pressed = false }
+        end
+
+        mkKey("W",     "W",     51, 6,  38, 26)
+        mkKey("A",     "A",      9, 34, 38, 26)
+        mkKey("S",     "S",     51, 34, 38, 26)
+        mkKey("D",     "D",     93, 34, 38, 26)
+        mkKey("Space", "SPACE",  8, 62, 124, 20)
+
+        local grip = new("TextButton", {
+            Size = UDim2.new(0, 18, 0, 18),
+            Position = UDim2.new(1, -18, 1, -18),
+            BackgroundTransparency = 1, Text = "", AutoButtonColor = false,
+            ZIndex = 60, Parent = ks,
+        })
+        for i = 1, 2 do
+            new("Frame", {
+                Size = UDim2.new(0, 9, 0, 1),
+                Position = UDim2.new(0, 5 + (i-1)*3, 0, 13 - (i-1)*3),
+                BackgroundColor3 = T.Muted, BackgroundTransparency = 0.4,
+                BorderSizePixel = 0, Rotation = 45, ZIndex = 61, Parent = grip,
+            })
+        end
+
+        dragBlockers[ks] = function(pos)
+            local gp, gs = grip.AbsolutePosition, grip.AbsoluteSize
+            return pos.X >= gp.X and pos.X <= gp.X + gs.X and pos.Y >= gp.Y and pos.Y <= gp.Y + gs.Y
+        end
+
+        local ksDrag, ksStart, ksStartScale = false, nil, 1
+        grip.InputBegan:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+                ksDrag = true; ksStart = i.Position; ksStartScale = ksScale.Scale
+            end
+        end)
+        UIS.InputChanged:Connect(function(i)
+            if ksDrag and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+                local dx = i.Position.X - ksStart.X
+                local dy = i.Position.Y - ksStart.Y
+                ksScale.Scale = math.clamp(ksStartScale + ((dx + dy) * 0.5) / 140, 0.5, 3)
+            end
+        end)
+        UIS.InputEnded:Connect(function(i)
+            if ksDrag and (i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch) then
+                ksDrag = false
+            end
+        end)
+
+        local state = { W=false, A=false, S=false, D=false, Space=false }
+
+        local function refresh(name)
+            local kf = keyFrames[name]; if not kf then return end
+            local on = state[name]
+            if kf.pressed == on then return end
+            kf.pressed = on
+            if on then
+                kf.frame.BackgroundColor3 = T.Accent
+                kf.frame.BackgroundTransparency = 0
+                kf.label.TextColor3 = ON_ACCENT
+                kf.stroke.Color = T.Accent
+                kf.stroke.Transparency = 0.2
+            else
+                kf.frame.BackgroundColor3 = T.Card
+                kf.frame.BackgroundTransparency = 0.2
+                kf.label.TextColor3 = T.Dim
+                kf.stroke.Color = T.Line
+                kf.stroke.Transparency = 0.5
+            end
+        end
+
+        UIS.InputBegan:Connect(function(i, gp)
+            if gp then return end
+            local c = i.KeyCode
+            if     c == Enum.KeyCode.W     then state.W = true; refresh("W")
+            elseif c == Enum.KeyCode.A     then state.A = true; refresh("A")
+            elseif c == Enum.KeyCode.S     then state.S = true; refresh("S")
+            elseif c == Enum.KeyCode.D     then state.D = true; refresh("D")
+            elseif c == Enum.KeyCode.Space then state.Space = true; refresh("Space")
+            end
+        end)
+        UIS.InputEnded:Connect(function(i)
+            local c = i.KeyCode
+            if     c == Enum.KeyCode.W     then state.W = false; refresh("W")
+            elseif c == Enum.KeyCode.A     then state.A = false; refresh("A")
+            elseif c == Enum.KeyCode.S     then state.S = false; refresh("S")
+            elseif c == Enum.KeyCode.D     then state.D = false; refresh("D")
+            elseif c == Enum.KeyCode.Space then state.Space = false; refresh("Space")
+            end
+        end)
+    end
+
+    -- ══════════════ MOUSESTROKES OVERLAY (resizable, mouse only) ══════════════
+    do
+        local ms = overlays.mousestrokes
+        local btnFrames = {}
+        local msScale = new("UIScale", {Name = "MSScale", Scale = 1, Parent = ms})
+
+        local function mkBtn(name, label, x, y, w, h)
+            local b = new("Frame", {
+                Size = UDim2.new(0, w, 0, h),
+                Position = UDim2.new(0, x, 0, y),
+                BackgroundColor3 = T.Card, BackgroundTransparency = 0.2,
+                BorderSizePixel = 0, Parent = ms,
+            })
+            corner(b, 5)
+            local s = stroke(b, 1, 0.5, T.Line, true)
+            local lbl = new("TextLabel", {
+                BackgroundTransparency = 1, Size = UDim2.new(1, 0, 1, 0),
+                Font = Enum.Font.GothamBold, Text = label,
+                TextColor3 = T.Dim, TextSize = 11, Parent = b,
+            })
+            regRef(b, "BackgroundColor3", "Card")
+            regRef(lbl, "TextColor3", "Dim")
+            btnFrames[name] = { frame = b, label = lbl, stroke = s, pressed = false }
+        end
+
+        mkBtn("LMB", "LMB", 8, 6, 60, 24)
+        mkBtn("RMB", "RMB", 72, 6, 60, 24)
+
+        local mouseBox = new("Frame", {
+            Size = UDim2.new(0, 124, 0, 52),
+            Position = UDim2.new(0, 8, 0, 38),
+            BackgroundColor3 = T.Bg, BackgroundTransparency = 0.35,
+            BorderSizePixel = 0, Parent = ms,
+        })
+        corner(mouseBox, 5)
+        stroke(mouseBox, 1, 0.5, T.Line, true)
+        regRef(mouseBox, "BackgroundColor3", "Bg")
+
+        local mouseLbl = new("TextLabel", {
+            BackgroundTransparency = 1,
+            Position = UDim2.new(0, 6, 0, 3), Size = UDim2.new(1, -12, 0, 12),
+            Font = Enum.Font.Gotham, Text = "MOUSE", TextColor3 = T.Muted, TextSize = 9,
+            TextXAlignment = Enum.TextXAlignment.Left, Parent = mouseBox,
+        })
+        regRef(mouseLbl, "TextColor3", "Muted")
+
+        local mouseDot = new("Frame", {
+            Size = UDim2.new(0, 8, 0, 8),
+            Position = UDim2.new(0.5, -4, 0.5, -4),
+            BackgroundColor3 = T.Accent, BorderSizePixel = 0, Parent = mouseBox,
+        })
+        corner(mouseDot, 4)
+        regRef(mouseDot, "BackgroundColor3", "Accent")
+
+        local grip = new("TextButton", {
+            Size = UDim2.new(0, 18, 0, 18),
+            Position = UDim2.new(1, -18, 1, -18),
+            BackgroundTransparency = 1, Text = "", AutoButtonColor = false,
+            ZIndex = 60, Parent = ms,
+        })
+        for i = 1, 2 do
+            new("Frame", {
+                Size = UDim2.new(0, 9, 0, 1),
+                Position = UDim2.new(0, 5 + (i-1)*3, 0, 13 - (i-1)*3),
+                BackgroundColor3 = T.Muted, BackgroundTransparency = 0.4,
+                BorderSizePixel = 0, Rotation = 45, ZIndex = 61, Parent = grip,
+            })
+        end
+
+        dragBlockers[ms] = function(pos)
+            local gp, gs = grip.AbsolutePosition, grip.AbsoluteSize
+            return pos.X >= gp.X and pos.X <= gp.X + gs.X and pos.Y >= gp.Y and pos.Y <= gp.Y + gs.Y
+        end
+
+        local msDrag, msStart, msStartScale = false, nil, 1
+        grip.InputBegan:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+                msDrag = true; msStart = i.Position; msStartScale = msScale.Scale
+            end
+        end)
+        UIS.InputChanged:Connect(function(i)
+            if msDrag and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+                local dx = i.Position.X - msStart.X
+                local dy = i.Position.Y - msStart.Y
+                msScale.Scale = math.clamp(msStartScale + ((dx + dy) * 0.5) / 140, 0.5, 3)
+            end
+        end)
+        UIS.InputEnded:Connect(function(i)
+            if msDrag and (i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch) then
+                msDrag = false
+            end
+        end)
+
+        local state = { LMB = false, RMB = false }
+        local function refresh(name)
+            local bf = btnFrames[name]; if not bf then return end
+            local on = state[name]
+            if bf.pressed == on then return end
+            bf.pressed = on
+            if on then
+                bf.frame.BackgroundColor3 = T.Accent
+                bf.frame.BackgroundTransparency = 0
+                bf.label.TextColor3 = ON_ACCENT
+                bf.stroke.Color = T.Accent
+                bf.stroke.Transparency = 0.2
+            else
+                bf.frame.BackgroundColor3 = T.Card
+                bf.frame.BackgroundTransparency = 0.2
+                bf.label.TextColor3 = T.Dim
+                bf.stroke.Color = T.Line
+                bf.stroke.Transparency = 0.5
+            end
+        end
+
+        UIS.InputBegan:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1 then state.LMB = true; refresh("LMB") end
+            if i.UserInputType == Enum.UserInputType.MouseButton2 then state.RMB = true; refresh("RMB") end
+        end)
+        UIS.InputEnded:Connect(function(i)
+            if i.UserInputType == Enum.UserInputType.MouseButton1 then state.LMB = false; refresh("LMB") end
+            if i.UserInputType == Enum.UserInputType.MouseButton2 then state.RMB = false; refresh("RMB") end
+        end)
+
+        -- Mouse direction tracking — works LOCKED (Delta) OR UNLOCKED (Position diff)
+        local mx, my = 0, 0
+        local lastMousePos = nil
+        UIS.InputChanged:Connect(function(i)
+            if i.UserInputType ~= Enum.UserInputType.MouseMovement then return end
+            local dX, dY = i.Delta.X, i.Delta.Y
+            if lastMousePos then
+                local pX = i.Position.X - lastMousePos.X
+                local pY = i.Position.Y - lastMousePos.Y
+                if pX*pX + pY*pY > dX*dX + dY*dY then dX, dY = pX, pY end
+            end
+            lastMousePos = i.Position
+            mx = mx + dX
+            my = my + dY
+        end)
+
+        RS.RenderStepped:Connect(function(dt)
+            local decay = math.exp(-dt * 8)
+            mx = mx * decay
+            my = my * decay
+            if not ms.Visible then return end
+            local dx = math.clamp(mx, -50, 50)
+            local dy = math.clamp(my, -18, 18)
+            mouseDot.Position = UDim2.new(0.5, dx - 4, 0.5, dy - 4)
+        end)
     end
 
     local coordsLbl, spVal, spBar
@@ -2403,12 +2878,43 @@ do
     local uiScale = new("UIScale", {Scale = 1, Parent = win})
     local canvas = new("CanvasGroup", {Name="Canvas", Size=UDim2.new(1,0,1,0), BackgroundTransparency=1, GroupTransparency=1, Parent=win})
     UI.canvas = canvas
-    local sidebar = new("Frame",{Name="Sidebar",Size=UDim2.new(0,SB_W,1,0),BackgroundColor3=T.Sidebar,BackgroundTransparency=TR.Sidebar,BorderSizePixel=0,Parent=canvas})
+    local sidebar = new("Frame",{Name="Sidebar",Size=UDim2.new(0,SB_W,1,0),BackgroundColor3=T.Sidebar,BackgroundTransparency=TR.Sidebar,BorderSizePixel=0,ClipsDescendants=true,Parent=canvas})
     corner(sidebar, 18); stroke(sidebar, 1, 0.5, T.Line); regRef(sidebar, "BackgroundColor3", "Sidebar"); addSheen(sidebar)
     UI.sidebar = sidebar
     local mainPanel = new("Frame",{Name="Main",Size=UDim2.new(1,-(SB_W+GAP),1,0),Position=UDim2.new(0,SB_W+GAP,0,0),BackgroundColor3=T.Bg,BackgroundTransparency=TR.Window,BorderSizePixel=0,ClipsDescendants=true,Parent=canvas})
     corner(mainPanel, 18); stroke(mainPanel, 1, 0.5, T.Line); regRef(mainPanel, "BackgroundColor3", "Bg"); addSheen(mainPanel)
     UI.mainPanel = mainPanel
+
+    local function mkBg(parent, name)
+        return new("ImageLabel", {
+            Name = name,
+            Size = UDim2.new(1, 0, 1, 0),
+            BackgroundTransparency = 1,
+            Image = "",
+            ImageTransparency = 0.3,
+            ScaleType = Enum.ScaleType.Crop,
+            ZIndex = 0,
+            Visible = false,
+            Parent = parent,
+        })
+    end
+
+    UI.bgImage = mkBg(mainPanel, "ShyUIBackground")
+    UI.bgImageSidebar = mkBg(sidebar, "ShyUIBackgroundSidebar")
+
+    Fn.applyUIBackground = function()
+        local show = feat.uiBackground and feat.uiBackgroundId ~= ""
+        local url = (feat.uiBackgroundId ~= "")
+            and ("rbxthumb://type=Asset&id="..feat.uiBackgroundId.."&w=420&h=420") or ""
+        for _, img in ipairs({UI.bgImage, UI.bgImageSidebar}) do
+            if img then
+                img.Visible = show
+                img.ImageTransparency = feat.uiBackgroundTransparency
+                if url ~= "" then img.Image = url end
+            end
+        end
+    end
+
     local header = new("Frame",{Name="Header",Size=UDim2.new(1,0,0,HEAD_H),BackgroundTransparency=1,Parent=mainPanel})
     local ht = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,22,0,14),Size=UDim2.new(1,-140,0,22),Font=Enum.Font.GothamBold,Text="Shy Client",TextColor3=T.Text,TextSize=17,TextXAlignment=Enum.TextXAlignment.Left,Parent=header})
     local hs = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,22,0,38),Size=UDim2.new(1,-140,0,16),Font=Enum.Font.Gotham,Text="Welcome, "..(player.DisplayName or player.Name),TextColor3=T.Dim,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,Parent=header})
@@ -2902,6 +3408,15 @@ do
     mkS(pVis, "Roll Amount", 0, 20, 6, function(v) feat.cameraRollAmount = v end, "RollAmt")
     mkT(pVis, "Screen Shake", false, function(s) feat.screenShake = s end, "ScreenShake")
     mkS(pVis, "Shake Amount", 0, 3, 0.5, function(v) feat.shakeAmount = v end, "ShakeAmt", true)
+    hdr(pVis, "Shaders")
+    mkT(pVis, "Motion Blur", false, function(s) feat.motionBlur = s end, "MotionBlur")
+    mkS(pVis, "Motion Blur Strength", 0, 3, 1.0, function(v) feat.motionBlurStrength = v end, "MotionBlurStrength", true)
+    mkT(pVis, "Glossy (Reflective World)", false, function(s) feat.reflective = s; Fn.applyReflective() end, "Glossy")
+    mkS(pVis, "Gloss Strength", 0, 1, 0.5, function(v) Fn.setReflectiveStrength(v) end, "Reflectivity", true)
+    mkT(pVis, "Realistic Shader", false, function(s) feat.realistic = s; Fn.applyRealistic() end, "Realistic")
+    mkS(pVis, "Realism Strength", 0, 2, 1.0, function(v) Fn.setRealisticStrength(v) end, "RealismStrength", true)
+    hdr(pVis, "Performance")
+    mkT(pVis, "FPS Boost (strip textures)", false, function(s) feat.fpsBoost = s; Fn.applyFpsBoost() end, "FpsBoost")
     hdr(pVis, "Body")
     mkT(pVis, "Glow", false, function(s) feat.glow = s; Fn.rebuildVFX() end, "VFXGlow")
     mkT(pVis, "Neon Body", false, function(s) feat.neon = s; Fn.applyNeonBody() end, "VFXNeon")
@@ -2968,6 +3483,8 @@ do
     mkT(pOver, "Coordinates", false, function(s) overlays.coords.Visible = s end, "Coords")
     mkT(pOver, "Speed", false, function(s) overlays.speed.Visible = s end, "SpeedHud")
     mkT(pOver, "Keybind Overlay", false, function(s) overlays.keybinds.Visible = s; if s then Fn.refreshKb() end end, "KbOverlay")
+    mkT(pOver, "Keystrokes", false, function(s) overlays.keystrokes.Visible = s end, "Keystrokes")
+    mkT(pOver, "Mousestrokes", false, function(s) overlays.mousestrokes.Visible = s end, "Mousestrokes")
     mkT(pOver, "Status Bar", false, function(s) overlays.statusBar.Visible = s end, "StatusBar")
     mkT(pOver, "FPS Counter", false, function(s) overlays.fps.Visible = s end, "FpsBox")
     mkT(pOver, "Ping", false, function(s) overlays.ping.Visible = s end, "PingBox")
@@ -2986,6 +3503,7 @@ do
         statusBar = "Status Bar", fps = "FPS Counter", coords = "Coordinates",
         ping = "Ping", watermark = "Watermark", keybinds = "Keybind Overlay",
         musicHud = "Music HUD", speed = "Speed", lyrics = "Lyrics Bar",
+        keystrokes = "Keystrokes", mousestrokes = "Mousestrokes",
     }
     for key, label in pairs(OVERLAY_LABELS) do
         local btn = new("TextButton", {
@@ -3035,6 +3553,25 @@ do
     mkS(pTheme, "Glass Refraction", 1, 4, 2.1, function(v) Glass.refraction = v end, "GlassRefraction", true)
     hdr(pTheme, "UI Transparency")
     mkS(pTheme, "Window Opacity", 0, 90, 5, function(v) UI.opacity = v; if not Glass.on then Fn.setOpacity(v / 100) end end, "UITransparency")
+
+    hdr(pTheme, "Custom Background")
+    mkT(pTheme, "Use Decal Background", false, function(s)
+        feat.uiBackground = s
+        Fn.applyUIBackground()
+    end, "UIBackground")
+    local bgIdBox = mkInput(pTheme, "Decal / Image ID", "e.g. 1234567890", 200)
+    bgIdBox.FocusLost:Connect(function()
+        local raw = tostring(bgIdBox.Text or ""):gsub("%s",""):gsub("rbxassetid://",""):gsub("[^%d]","")
+        if raw == "" then return end
+        feat.uiBackgroundId = raw
+        Fn.applyUIBackground()
+        notify("Background", "Loaded ID "..raw)
+    end)
+    mkS(pTheme, "Background Transparency", 0, 1, 0.3, function(v)
+        feat.uiBackgroundTransparency = v
+        Fn.applyUIBackground()
+    end, "UIBackgroundTrans", true)
+
     hdr(pTheme, "Full HUD")
     for _, name in ipairs(PRESET_ORDER) do mkB(pTheme, name .. " HUD", function() Fn.hudPack(name) end) end
     hdr(pTheme, "Presets")
@@ -3255,7 +3792,7 @@ end
 do
     local Saves, SaveOrder = {}, {}
     local SAVE_FILE = "shyclient_v3_saves.json"
-    local OVKB = {statusBar="StatusBar", fps="FpsBox", coords="Coords", ping="PingBox", watermark="Watermark", keybinds="KbOverlay", musicHud="MusicHud", speed="SpeedHud", lyrics="LyricsBar"}
+    local OVKB = {statusBar="StatusBar", fps="FpsBox", coords="Coords", ping="PingBox", watermark="Watermark", keybinds="KbOverlay", musicHud="MusicHud", speed="SpeedHud", lyrics="LyricsBar", keystrokes="Keystrokes", mousestrokes="Mousestrokes"}
     local FEATMAP = {
         Fly="fly", InfJump="infJump", NoClip="noclip", FreeCam="freeCam", Fullbright="fullbright",
         VFXGlow="glow", VFXNeon="neon", VFXTrail="trail", VFXFire="fire", VFXSparkle="sparkle",
@@ -3269,7 +3806,9 @@ do
         LightningAura="lightningAura", FireFootsteps="fireFootsteps", FxButterflies="butterflies",
         FxGhost="ghost", FxChroma="chromaticAberration", FxDOF="depthOfField", FxRetro="retroFilter",
         FxVHS="vhsFilter", FxGlitch="glitchFilter", SprintFov="sprintFov", CamRoll="cameraRoll",
-        ScreenShake="screenShake", EspEnabled="espEnabled", EspNames="espNames", EspHealth="espHealth",
+        ScreenShake="screenShake", MotionBlur="motionBlur", Glossy="reflective", Realistic="realistic",
+        FpsBoost="fpsBoost", UIBackground="uiBackground", EspEnabled="espEnabled",
+        EspNames="espNames", EspHealth="espHealth",
         EspDistance="espDistance", EspChams="espChams", EspTeam="espTeamCheck",
         Crosshair="crosshair", ChDot="crosshairDot", ChOutline="crosshairOutline",
         UISounds="uiSounds", StatusBarLyrics="lyricsInStatusBar", SmoothLyrics="smoothLyricsTransition",
@@ -3310,6 +3849,7 @@ do
             if Fn.applyScreenFilters then Fn.applyScreenFilters() end
             if Fn.rebuildCrosshair then Fn.rebuildCrosshair() end
             if Fn.setEspEnabled then Fn.setEspEnabled(feat.espEnabled) end
+            if Fn.applyUIBackground then Fn.applyUIBackground() end
         end
         if d.sliders then for n, v in pairs(d.sliders) do local s = SliderReg[n]; if s then pcall(function() s.set(v) end) end end end
         if d.overlays then for name, pos in pairs(d.overlays) do local f = overlays[name]; if f then f.Position = UDim2.new(pos.xS, pos.xO, pos.yS, pos.yO); local m = OVKB[name]; if m and ToggleReg[m] then pcall(ToggleReg[m], pos.vis) else f.Visible = pos.vis end end end; Fn.refreshKb() end
@@ -3561,6 +4101,7 @@ Fn.refreshKb()
 Fn.updateHud()
 Fn.applyScreenFilters()
 Fn.rebuildCrosshair()
+if Fn.applyUIBackground then Fn.applyUIBackground() end
 
 UISounds.enabled = feat.uiSounds
 UISounds.volume = (feat.uiSoundVolume or 40) / 100
