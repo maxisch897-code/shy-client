@@ -1,7 +1,5 @@
 -- Shy Client v3
 -- Made by n_e_r_v_y with love
--- Merges v3 visual/functional features into v4 base
--- + Keystrokes/Mousestrokes overlays, Motion Blur, Glossy, FPS Boost, Realistic Shader, Custom Decal Background
 
 local UIS = game:GetService("UserInputService")
 local TS  = game:GetService("TweenService")
