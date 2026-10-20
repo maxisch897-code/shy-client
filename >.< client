@@ -1,5 +1,6 @@
 -- >.< Client
--- Made by n_e_r_v_y with love
+-- Made with love
+-- Keystrokes/Mousestrokes overlays, Motion Blur, Glossy, FPS Boost, Realistic Shader, Custom Decal Background, Smooth visuals
 
 local UIS = game:GetService("UserInputService")
 local TS  = game:GetService("TweenService")
@@ -27,17 +28,15 @@ end
 -- ══════════════════════════════════════════════════════════════
 -- CORE TABLES
 -- ══════════════════════════════════════════════════════════════
--- Starts as fully opaque, pure black (Dark theme)
-local TR = { Window=0, Title=0, Sidebar=0, Content=0, Card=0, Overlay=0, Notify=0 }
+local TR = { Window=0.05, Title=0.03, Sidebar=0.03, Content=0.04, Card=0.02, Overlay=0.12, Notify=0.04 }
 local T = {
-    Bg=Color3.fromRGB(0,0,0), Panel=Color3.fromRGB(10,10,10), Sidebar=Color3.fromRGB(0,0,0),
-    Card=Color3.fromRGB(15,15,15), Hover=Color3.fromRGB(30,30,30), Text=Color3.fromRGB(255,255,255),
-    Dim=Color3.fromRGB(160,160,160), Muted=Color3.fromRGB(100,100,100), Line=Color3.fromRGB(40,40,40),
-    Accent=Color3.fromRGB(255,255,255), Accent2=Color3.fromRGB(200,200,200),
-    On=Color3.fromRGB(255,255,255), Off=Color3.fromRGB(30,30,30), Bad=Color3.fromRGB(255,80,80),
+    Bg=Color3.fromRGB(14,14,16), Panel=Color3.fromRGB(18,18,20), Sidebar=Color3.fromRGB(20,20,22),
+    Card=Color3.fromRGB(26,26,30), Hover=Color3.fromRGB(34,34,38), Text=Color3.fromRGB(235,235,240),
+    Dim=Color3.fromRGB(150,150,160), Muted=Color3.fromRGB(90,90,100), Line=Color3.fromRGB(42,42,46),
+    Accent=Color3.fromRGB(200,200,210), Accent2=Color3.fromRGB(150,150,165),
+    On=Color3.fromRGB(200,200,210), Off=Color3.fromRGB(45,45,50), Bad=Color3.fromRGB(240,100,110),
 }
 local PRESETS = {
-    Dark={Bg=Color3.fromRGB(0,0,0),Panel=Color3.fromRGB(10,10,10),Sidebar=Color3.fromRGB(0,0,0),Card=Color3.fromRGB(15,15,15),Hover=Color3.fromRGB(30,30,30),Line=Color3.fromRGB(40,40,40),Accent=Color3.fromRGB(255,255,255),Accent2=Color3.fromRGB(200,200,200)},
     Gray={Bg=Color3.fromRGB(14,14,16),Panel=Color3.fromRGB(18,18,20),Sidebar=Color3.fromRGB(20,20,22),Card=Color3.fromRGB(26,26,30),Hover=Color3.fromRGB(34,34,38),Line=Color3.fromRGB(42,42,46),Accent=Color3.fromRGB(200,200,210),Accent2=Color3.fromRGB(150,150,165)},
     Teal={Bg=Color3.fromRGB(8,18,18),Panel=Color3.fromRGB(12,24,24),Sidebar=Color3.fromRGB(14,26,26),Card=Color3.fromRGB(18,36,34),Hover=Color3.fromRGB(26,50,46),Line=Color3.fromRGB(32,62,56),Accent=Color3.fromRGB(80,235,185),Accent2=Color3.fromRGB(40,190,150)},
     Novoline={Bg=Color3.fromRGB(13,13,17),Panel=Color3.fromRGB(16,16,22),Sidebar=Color3.fromRGB(18,18,24),Card=Color3.fromRGB(22,22,30),Hover=Color3.fromRGB(30,30,40),Line=Color3.fromRGB(38,38,48),Accent=Color3.fromRGB(167,139,250),Accent2=Color3.fromRGB(99,102,241)},
@@ -48,12 +47,13 @@ local PRESETS = {
     Green={Bg=Color3.fromRGB(10,18,12),Panel=Color3.fromRGB(14,24,16),Sidebar=Color3.fromRGB(16,26,18),Card=Color3.fromRGB(22,36,26),Hover=Color3.fromRGB(30,48,34),Line=Color3.fromRGB(36,58,40),Accent=Color3.fromRGB(120,220,150),Accent2=Color3.fromRGB(70,180,110)},
     Cyan={Bg=Color3.fromRGB(8,16,20),Panel=Color3.fromRGB(12,22,28),Sidebar=Color3.fromRGB(14,24,30),Card=Color3.fromRGB(18,34,42),Hover=Color3.fromRGB(26,46,56),Line=Color3.fromRGB(32,56,68),Accent=Color3.fromRGB(80,220,240),Accent2=Color3.fromRGB(50,170,200)},
     Orange={Bg=Color3.fromRGB(20,12,6),Panel=Color3.fromRGB(28,18,10),Sidebar=Color3.fromRGB(30,20,12),Card=Color3.fromRGB(42,26,16),Hover=Color3.fromRGB(56,36,22),Line=Color3.fromRGB(68,44,28),Accent=Color3.fromRGB(255,150,70),Accent2=Color3.fromRGB(230,110,40)},
+    Dark={Bg=Color3.fromRGB(6,6,8),Panel=Color3.fromRGB(10,10,14),Sidebar=Color3.fromRGB(12,12,16),Card=Color3.fromRGB(18,18,24),Hover=Color3.fromRGB(26,26,34),Line=Color3.fromRGB(34,34,42),Accent=Color3.fromRGB(230,230,240),Accent2=Color3.fromRGB(180,180,200)},
 }
-local PRESET_ORDER = {"Dark","Gray","Teal","Novoline","Blue","Red","Violet","Pink","Green","Cyan","Orange"}
+local PRESET_ORDER = {"Gray","Teal","Novoline","Blue","Red","Violet","Pink","Green","Cyan","Orange","Dark"}
 local ThemeRefs = {}
 local GlassGrads, GlassStrokes = {}, {}
 local Glass = { on=false, clarity=92, blur=4, refraction=2.4, savedT=nil, ok=true, hq=false, txt=setmetatable({}, {__mode="k"}) }
-local UI = { opacity=0, cards={}, n=0, isOpen=false }
+local UI = { opacity=5, cards={}, n=0, isOpen=false }
 local Fn, Wx = {}, {}
 local overlays = {}
 local Keybinds, ToggleReg, SliderReg = {}, {}, {}
@@ -71,6 +71,7 @@ local function slerpC(a, b, dt, speed)
 end
 local function sdur(t) return t / math.max(Smooth.level, 0.1) end
 
+-- Smoothed effect state
 local sBloom, sTint, sVignette, sChroma, sRetro = 0, 0, 0, 0, 0
 local sEffectColor = Color3.fromRGB(100, 200, 255)
 
@@ -97,7 +98,7 @@ local feat = {
     screenShake=false, shakeAmount=0.5, sprintFov=false, sprintFovBoost=15,
     cameraRoll=false, cameraRollAmount=6,
     espEnabled=false, espNames=true, espHealth=true, espDistance=true, espChams=false,
-    espOutlines=false, espTeamCheck=false, espMaxDist=500,
+    espTeamCheck=false, espMaxDist=500,
     crosshair=false, crosshairStyle="cross", crosshairSize=8, crosshairThickness=2,
     crosshairGap=4, crosshairDot=true, crosshairOutline=true, crosshairColorHex="#FFFFFF",
     uiSounds=false, uiSoundVolume=40, uiSoundPitch=1.0, uiSoundId="12221967",
@@ -108,7 +109,7 @@ local feat = {
     fpsBoost=false,
     realistic=false, realisticStrength=1.0,
     uiBackground=false, uiBackgroundId="", uiBackgroundTransparency=0.3,
-    smoothCamera=false, smoothCameraStrength=0.5, -- Kept for save compatibility, UI removed
+    smoothCamera=false, smoothCameraStrength=0.5,
 }
 
 local Music = { playing=false, volume=0.5, looped=true, id=nil, name="Nothing playing", artist="" }
@@ -155,6 +156,11 @@ local function stroke(p, t, tr, c, skip)
     s.Transparency = tr or 0.6; s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border; s.Parent = p
     if not skip then
         if not c or c == T.Line then regRef(s, "Color", "Line") end
+        local g = Instance.new("UIGradient"); g.Rotation = 45
+        g.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0,0),NumberSequenceKeypoint.new(0.35,0.8),NumberSequenceKeypoint.new(0.65,0.8),NumberSequenceKeypoint.new(1,0.05)})
+        g.Enabled = Glass.on; g.Parent = s
+        GlassStrokes[#GlassStrokes+1] = {s=s, g=g, o=s.Transparency}
+        if Glass.on then s.Transparency = 0.2 end
     end
     return s
 end
@@ -164,7 +170,7 @@ local function addSheen(f)
     g.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0,0),NumberSequenceKeypoint.new(0.5,0.12),NumberSequenceKeypoint.new(1,0.3)})
     g.Enabled = Glass.on; g.Parent = f; GlassGrads[#GlassGrads+1] = g
 end
-local function regCard(f) table.insert(UI.cards, f); UI.n += 1 end -- Removed addSheen to fix UI artifacts
+local function regCard(f) table.insert(UI.cards, f); addSheen(f); UI.n += 1 end
 local function drag(f, h)
     h = h or f
     local d, s, sp
@@ -779,11 +785,13 @@ do
 end
 
 -- ══════════════════════════════════════════════════════════════
--- CAMERA FX (Fixed Smooth Camera)
+-- CAMERA FX (smoothed)
 -- ══════════════════════════════════════════════════════════════
 do
     local shakeOff, shakeDecay, baseRoll = CFrame.new(), 0, 0
-    local sFovAdd = 0
+    local sFovAdd, sShakeTarget = 0, 0
+    local lastCamCF = camera.CFrame
+    local smoothedCF = camera.CFrame
     Fn.triggerShake = function(amount) if feat.screenShake then shakeDecay = math.max(shakeDecay, amount * feat.shakeAmount) end end
     RS.RenderStepped:Connect(function(dt)
         if shakeDecay > 0.001 then
@@ -807,7 +815,15 @@ do
         if (feat.screenShake and shakeDecay > 0) or feat.cameraRoll then
             camera.CFrame = camera.CFrame * shakeOff * CFrame.Angles(0, 0, baseRoll)
         end
-        -- Smooth Camera logic REMOVED to prevent sensitivity issues.
+        -- Smooth camera motion
+        if feat.smoothCamera and not feat.freeCam then
+            local cur = camera.CFrame
+            local target = cur
+            smoothedCF = smoothedCF:Lerp(target, 1 - math.exp(-dt * 20 * feat.smoothCameraStrength * Smooth.level))
+            camera.CFrame = smoothedCF
+        else
+            smoothedCF = camera.CFrame
+        end
     end)
 end
 
@@ -1163,13 +1179,11 @@ do
 end
 
 -- ══════════════════════════════════════════════════════════════
--- ESP / CHAMS / OUTLINES
+-- ESP / CHAMS
 -- ══════════════════════════════════════════════════════════════
 do
     local espFolder = new("Folder", {Name="OwoESP", Parent=workspace})
-    local outlineFolder = new("Folder", {Name="OwoOutlines", Parent=workspace})
     local espData = {}
-    local outlines = {}
     local function createEspFor(plr)
         if plr == player or espData[plr] then return end
         local char = plr.Character
@@ -1208,46 +1222,12 @@ do
     end
     for _, plr in ipairs(Players:GetPlayers()) do onPlayerAdded(plr) end
     Players.PlayerAdded:Connect(onPlayerAdded)
-    Players.PlayerRemoving:Connect(function(plr)
-        destroyEspFor(plr)
-        if outlines[plr] then outlines[plr]:Destroy(); outlines[plr] = nil end
-    end)
+    Players.PlayerRemoving:Connect(destroyEspFor)
     Fn.setEspEnabled = function(on)
         if on then for _, plr in ipairs(Players:GetPlayers()) do if plr ~= player then createEspFor(plr) end end
         else for plr in pairs(espData) do destroyEspFor(plr) end end
         Fn.refreshEsp()
     end
-
-    -- Outlines Loop
-    RS.Heartbeat:Connect(function()
-        if not feat.espOutlines then
-            if next(outlines) then
-                for plr, obj in pairs(outlines) do obj:Destroy(); outlines[plr] = nil end
-            end
-            return
-        end
-        for _, plr in ipairs(Players:GetPlayers()) do
-            if plr ~= player and plr.Character then
-                if not outlines[plr] or not outlines[plr].Parent then
-                    outlines[plr] = new("Highlight", {
-                        Name = "OwoOutline",
-                        FillTransparency = 1,
-                        OutlineColor = EFFECT_COLOR,
-                        OutlineTransparency = 0,
-                        DepthMode = Enum.HighlightDepthMode.Occluded,
-                        Adornee = plr.Character,
-                        Parent = outlineFolder
-                    })
-                else
-                    outlines[plr].Adornee = plr.Character
-                    outlines[plr].OutlineColor = EFFECT_COLOR
-                end
-            elseif outlines[plr] and (not plr.Character or plr == player) then
-                outlines[plr]:Destroy(); outlines[plr] = nil
-            end
-        end
-    end)
-
     RS.RenderStepped:Connect(function()
         if not feat.espEnabled then return end
         local myHrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
@@ -1611,7 +1591,7 @@ do
     UI.defaultPos = {}
     local function mkOv(name, sz, pos)
         local f = new("Frame",{Size=sz,Position=pos,BackgroundColor3=T.Card,BackgroundTransparency=TR.Overlay,BorderSizePixel=0,Visible=false,Active=true,ZIndex=30,Parent=ovGui})
-        corner(f, RM); stroke(f, 1, 0.6, T.Line); regRef(f,"BackgroundColor3","Card"); drag(f)
+        corner(f, RM); stroke(f, 1, 0.6, T.Line); regRef(f,"BackgroundColor3","Card"); addSheen(f); drag(f)
         overlays[name] = f; UI.defaultPos[name] = pos
         return f
     end
@@ -2383,7 +2363,7 @@ do
     end
     local chatGui = new("ScreenGui",{Name="OwoFriendChat",ResetOnSpawn=false,IgnoreGuiInset=true,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,Parent=pg,DisplayOrder=5})
     local win = new("Frame",{Name="ChatWin",Size=UDim2.new(0,380,0,420),Position=UDim2.new(1,-400,0.5,-210),BackgroundColor3=T.Panel,BackgroundTransparency=TR.Window,BorderSizePixel=0,Visible=false,Active=true,Parent=chatGui})
-    corner(win,RB); stroke(win,1,0.5,T.Line); regRef(win,"BackgroundColor3","Panel")
+    corner(win,RB); stroke(win,1,0.5,T.Line); regRef(win,"BackgroundColor3","Panel"); addSheen(win)
     Friends.panel = win
     local header = new("Frame",{Size=UDim2.new(1,0,0,44),BackgroundTransparency=1,Parent=win})
     local title = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,16,0,0),Size=UDim2.new(1,-80,1,0),Font=Enum.Font.GothamBold,Text="Chat",TextColor3=T.Text,TextSize=14,TextXAlignment=Enum.TextXAlignment.Left,Parent=header}); regRef(title,"TextColor3","Text")
@@ -2421,7 +2401,7 @@ do
 end
 
 -- ══════════════════════════════════════════════════════════════
--- WORLD FX
+-- WORLD FX (smoothed)
 -- ══════════════════════════════════════════════════════════════
 do
     local fx = new("Folder", {Name="OwoFX", Parent=workspace})
@@ -2508,15 +2488,18 @@ do
         local cp = camera.CFrame.Position
         sky.CFrame = CFrame.new(cp + Vector3.new(0, 45, 0))
         vol.CFrame = CFrame.new(cp)
+        -- Smooth effect transitions
         sBloom = slerp(sBloom, feat.bloom and 1 or 0, dt, Smooth.effectSpeed)
         sTint = slerp(sTint, feat.tint and 1 or 0, dt, Smooth.effectSpeed)
         sVignette = slerp(sVignette, feat.vignette and 1 or 0, dt, Smooth.effectSpeed)
         sChroma = slerp(sChroma, feat.chromaticAberration and 1 or 0, dt, Smooth.effectSpeed)
         sRetro = slerp(sRetro, feat.retroFilter and 1 or 0, dt, Smooth.effectSpeed)
         sEffectColor = slerpC(sEffectColor, EFFECT_COLOR, dt, Smooth.colorSpeed)
+        -- Apply bloom smoothly
         bloomE.Enabled = sBloom > 0.01
         bloomE.Intensity = 0.7 * sBloom
         bloomE.Size = 28
+        -- Apply tint smoothly
         tintCC.Enabled = sTint > 0.01
         if sTint > 0.01 then
             local k = feat.tintStrength / 100
@@ -2525,6 +2508,7 @@ do
             tintCC.Contrast = 0.08 * k * sTint
             tintCC.Brightness = -0.03 * k * sTint
         end
+        -- Apply vignette smoothly
         for _, f in ipairs(vig) do
             f.Visible = sVignette > 0.01
             if f.Visible and f:FindFirstChildOfClass("UIGradient") then
@@ -2892,15 +2876,12 @@ do
     local uiScale = new("UIScale", {Scale = 1, Parent = win})
     local canvas = new("CanvasGroup", {Name="Canvas", Size=UDim2.new(1,0,1,0), BackgroundTransparency=1, GroupTransparency=1, Parent=win})
     UI.canvas = canvas
-    
     local sidebar = new("Frame",{Name="Sidebar",Size=UDim2.new(0,SB_W,1,0),BackgroundColor3=T.Sidebar,BackgroundTransparency=TR.Sidebar,BorderSizePixel=0,ClipsDescendants=true,Parent=canvas})
-    corner(sidebar, 18); stroke(sidebar, 1, 0.5, T.Line); regRef(sidebar, "BackgroundColor3", "Sidebar")
+    corner(sidebar, 18); stroke(sidebar, 1, 0.5, T.Line); regRef(sidebar, "BackgroundColor3", "Sidebar"); addSheen(sidebar)
     UI.sidebar = sidebar
-    
     local mainPanel = new("Frame",{Name="Main",Size=UDim2.new(1,-(SB_W+GAP),1,0),Position=UDim2.new(0,SB_W+GAP,0,0),BackgroundColor3=T.Bg,BackgroundTransparency=TR.Window,BorderSizePixel=0,ClipsDescendants=true,Parent=canvas})
-    corner(mainPanel, 18); stroke(mainPanel, 1, 0.5, T.Line); regRef(mainPanel, "BackgroundColor3", "Bg")
+    corner(mainPanel, 18); stroke(mainPanel, 1, 0.5, T.Line); regRef(mainPanel, "BackgroundColor3", "Bg"); addSheen(mainPanel)
     UI.mainPanel = mainPanel
-    
     local function mkBg(parent, name)
         return new("ImageLabel", {Name = name, Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Image = "", ImageTransparency = 0.3, ScaleType = Enum.ScaleType.Crop, ZIndex = 0, Visible = false, Parent = parent})
     end
@@ -2917,7 +2898,6 @@ do
             end
         end
     end
-    
     local header = new("Frame",{Name="Header",Size=UDim2.new(1,0,0,HEAD_H),BackgroundTransparency=1,Parent=mainPanel})
     local ht = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,22,0,14),Size=UDim2.new(1,-140,0,22),Font=Enum.Font.GothamBold,Text=">.<",TextColor3=T.Text,TextSize=18,TextXAlignment=Enum.TextXAlignment.Left,Parent=header})
     local hs = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,22,0,38),Size=UDim2.new(1,-140,0,16),Font=Enum.Font.Gotham,Text="Welcome, "..(player.DisplayName or player.Name),TextColor3=T.Dim,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,Parent=header})
@@ -2926,9 +2906,7 @@ do
     regRef(clockLbl,"TextColor3","Dim")
     task.spawn(function() while header.Parent do task.wait(1); clockLbl.Text = os.date("%I:%M %p"):gsub("^0","") end end)
     drag(win, header)
-    
     UI.contentArea = new("Frame",{Name="Content",Size=UDim2.new(1,-32,1,-HEAD_H-16),Position=UDim2.new(0,16,0,HEAD_H),BackgroundTransparency=1,Parent=mainPanel})
-    
     local rh = new("TextButton",{Size=UDim2.new(0,20,0,20),Position=UDim2.new(1,-20,1,-20),BackgroundTransparency=1,Text="",AutoButtonColor=false,ZIndex=60,Parent=win})
     local grip = new("Frame",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,ZIndex=61,Parent=rh})
     for i = 1, 2 do
@@ -2948,7 +2926,6 @@ do
     UIS.InputEnded:Connect(function(i)
         if rszA and (i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch) then rszA = false; Fn.dragState(win, false) end
     end)
-    
     Fn.openMenu = function()
         if UI.isOpen then return end
         playUiSoundLayered("menuOpen")
@@ -2967,7 +2944,6 @@ do
         task.delay(sdur(0.18), function() if not UI.isOpen then win.Visible = false; Fn.syncGlass() end end)
     end
     Fn.toggleMenu = function() if UI.isOpen then Fn.closeMenu() else Fn.openMenu() end end
-    
     local Pages, Tabs = {}, {}
     local cur = nil
     local tabList = new("ScrollingFrame", {Size=UDim2.new(1,0,1,-80), Position=UDim2.new(0,0,0,14), BackgroundTransparency=1, BorderSizePixel=0, ScrollBarThickness=0, CanvasSize=UDim2.new(0,0,0,0), AutomaticCanvasSize=Enum.AutomaticSize.Y, ScrollingDirection=Enum.ScrollingDirection.Y, Parent=sidebar})
@@ -2989,6 +2965,7 @@ do
         cur = name
         for tn, p in pairs(Pages) do p.Visible = (tn == name) end
         for tn, t in pairs(Tabs) do setTabVisual(t, tn == name) end
+        -- Staggered fade-in for page content
         local page = Pages[name]
         if page then
             local children = page:GetChildren()
@@ -3022,7 +2999,6 @@ do
     miscBtn.MouseLeave:Connect(function() if cur ~= "misc" then tween(miscBtn,0.12,{BackgroundTransparency=1}) end end)
     miscBtn.MouseButton1Click:Connect(function() Fn.selTab("misc") end)
     Tabs.misc = {btn=miscBtn, label=miscLabel}
-    
     mkListPage = function(name)
         local p = new("ScrollingFrame",{Size=UDim2.new(1,0,1,0), BackgroundTransparency=1, BorderSizePixel=0, ScrollBarThickness=3, ScrollBarImageColor3=T.Muted, ScrollBarImageTransparency=0.5, CanvasSize=UDim2.new(0,0,0,0), AutomaticCanvasSize=Enum.AutomaticSize.Y, Visible=false, Parent=UI.contentArea})
         new("UIListLayout",{Padding=UDim.new(0,6), Parent=p})
@@ -3064,6 +3040,7 @@ local function mkT(p, label, def, cb, kbName)
     local knob = new("Frame",{Size=UDim2.new(0,16,0,16),Position=st and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,3,0.5,-8),BackgroundColor3=st and Color3.new(1,1,1) or Color3.fromRGB(240,240,244),BorderSizePixel=0,ZIndex=3,Parent=track}); corner(knob, 8)
     local function setSt(v)
         st = v
+        -- Springy knob + smooth track
         TS:Create(track, TweenInfo.new(sdur(0.25), Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = st and T.On or T.Off, BackgroundTransparency = st and 0 or 0.25}):Play()
         TS:Create(knob, TweenInfo.new(sdur(0.35), Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = st and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,3,0.5,-8), BackgroundColor3 = st and Color3.new(1,1,1) or Color3.fromRGB(240,240,244)}):Play()
         trackGrad.Enabled = st
@@ -3274,6 +3251,7 @@ Fn.hudPack = function(presetName)
     notify("HUD Pack", (presetName or "Current theme") .. " HUD enabled")
 end
 
+-- Smooth theme transition
 Fn.smoothThemeApply = function(preset, duration)
     duration = duration or 0.6
     local fromColors = {}
@@ -3499,7 +3477,6 @@ do
     mkT(pVis, "Landing Rings", false, function(s) feat.landRing = s; Fn.rebuildVFX() end, "VFXLandRing")
     hdr(pVis, "ESP / Chams")
     mkT(pVis, "Player ESP", false, function(s) feat.espEnabled = s; Fn.setEspEnabled(s) end, "EspEnabled")
-    mkT(pVis, "Player Outlines", false, function(s) feat.espOutlines = s end, "EspOutlines")
     mkT(pVis, "ESP Names", true, function(s) feat.espNames = s; Fn.refreshEsp() end, "EspNames")
     mkT(pVis, "ESP Health", true, function(s) feat.espHealth = s; Fn.refreshEsp() end, "EspHealth")
     mkT(pVis, "ESP Distance", true, function(s) feat.espDistance = s; Fn.refreshEsp() end, "EspDistance")
@@ -3608,7 +3585,7 @@ do
     mkS(pTheme, "Glass Blur", 0, 30, 4, function(v) Glass.blur = v; if Glass.on then Fn.setRealGlass(true) end end, "GlassBlur")
     mkS(pTheme, "Glass Refraction", 1, 4, 2.4, function(v) Glass.refraction = v end, "GlassRefraction", true)
     hdr(pTheme, "UI Transparency")
-    mkS(pTheme, "Window Opacity", 0, 90, 0, function(v) UI.opacity = v; if not Glass.on then Fn.setOpacity(v / 100) end end, "UITransparency")
+    mkS(pTheme, "Window Opacity", 0, 90, 5, function(v) UI.opacity = v; if not Glass.on then Fn.setOpacity(v / 100) end end, "UITransparency")
     hdr(pTheme, "Custom Background")
     mkT(pTheme, "Use Decal Background", false, function(s) feat.uiBackground = s; Fn.applyUIBackground() end, "UIBackground")
     local bgIdBox = mkInput(pTheme, "Decal / Image ID", "e.g. 1234567890", 200)
@@ -3850,7 +3827,7 @@ do
         FxGhost="ghost", FxChroma="chromaticAberration", FxDOF="depthOfField", FxRetro="retroFilter",
         FxVHS="vhsFilter", FxGlitch="glitchFilter", SprintFov="sprintFov", CamRoll="cameraRoll",
         ScreenShake="screenShake", MotionBlur="motionBlur", Glossy="reflective", Realistic="realistic",
-        FpsBoost="fpsBoost", UIBackground="uiBackground", EspOutlines="espOutlines",
+        FpsBoost="fpsBoost", UIBackground="uiBackground", SmoothCam="smoothCamera",
         EspEnabled="espEnabled", EspNames="espNames", EspHealth="espHealth",
         EspDistance="espDistance", EspChams="espChams", EspTeam="espTeamCheck",
         Crosshair="crosshair", ChDot="crosshairDot", ChOutline="crosshairOutline",
