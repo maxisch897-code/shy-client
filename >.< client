@@ -1,6 +1,5 @@
 -- >.< Client
--- Made with love
--- Keystrokes/Mousestrokes overlays, Motion Blur, Glossy, FPS Boost, Realistic Shader, Custom Decal Background, Smooth visuals
+-- Made by n_e_r_v_y with love
 
 local UIS = game:GetService("UserInputService")
 local TS  = game:GetService("TweenService")
