@@ -1,5 +1,5 @@
 -- >.< Client
--- Made by n_e_r_v_y with love
+-- Made with love
 
 local UIS = game:GetService("UserInputService")
 local TS  = game:GetService("TweenService")
@@ -10,6 +10,7 @@ local Lighting = game:GetService("Lighting")
 local HttpService = game:GetService("HttpService")
 local SoundService = game:GetService("SoundService")
 local AssetService = game:GetService("AssetService")
+local TextChatService = game:GetService("TextChatService")
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
 local pg = player:WaitForChild("PlayerGui")
@@ -20,6 +21,7 @@ end
 for _, o in ipairs(Lighting:GetChildren()) do if o.Name:sub(1,3) == "Owo" then o:Destroy() end end
 do
     local f = workspace:FindFirstChild("OwoFX"); if f then f:Destroy() end
+    local rpf = workspace:FindFirstChild("OwoRipples"); if rpf then rpf:Destroy() end
     local m = SoundService:FindFirstChild("OwoMusic"); if m then m:Destroy() end
     local u = SoundService:FindFirstChild("OwoUISounds"); if u then u:Destroy() end
 end
@@ -51,7 +53,7 @@ local PRESETS = {
 local PRESET_ORDER = {"Gray","Teal","Novoline","Blue","Red","Violet","Pink","Green","Cyan","Orange","Dark"}
 local ThemeRefs = {}
 local GlassGrads, GlassStrokes = {}, {}
-local Glass = { on=false, clarity=92, blur=4, refraction=2.4, savedT=nil, ok=true, hq=false, txt=setmetatable({}, {__mode="k"}) }
+local Glass = { on=false, style="Frosted", clarity=62, blur=10, shine=0.55, tint=0, refraction=2.4, worldBlur=true, anim=true, applying=false }
 local UI = { opacity=5, cards={}, n=0, isOpen=false }
 local Fn, Wx = {}, {}
 local overlays = {}
@@ -109,6 +111,8 @@ local feat = {
     realistic=false, realisticStrength=1.0,
     uiBackground=false, uiBackgroundId="", uiBackgroundTransparency=0.3,
     smoothCamera=false, smoothCameraStrength=0.5,
+    potionsLayout=1, editAnywhere=false,
+    rainRipples=false, rippleRate=28, rippleRadius=45, rippleSize=1.6,
 }
 
 local Music = { playing=false, volume=0.5, looped=true, id=nil, name="Nothing playing", artist="" }
@@ -136,6 +140,7 @@ local function applyTheme()
         end
     end
     ThemeRefs = keep
+    if Glass.refreshAll then Glass.refreshAll() end
 end
 local function new(c, p) local i = Instance.new(c); for k, v in pairs(p or {}) do i[k] = v end; return i end
 local function corner(i, r) local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r or RS_); c.Parent = i; return c end
@@ -170,30 +175,42 @@ local function addSheen(f)
     g.Enabled = Glass.on; g.Parent = f; GlassGrads[#GlassGrads+1] = g
 end
 local function regCard(f) table.insert(UI.cards, f); addSheen(f); UI.n += 1 end
-local function drag(f, h)
+
+-- gate(): optional function that must return true before a drag may start (widget edit mode)
+-- onClick(): optional function called on a click without movement
+local function drag(f, h, gate, onClick)
     h = h or f
-    local d, s, sp
+    local d, s, sp, moved
+    local function isPress(i) return i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch end
     h.InputBegan:Connect(function(i)
-        if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+        if isPress(i) then
+            if gate and not gate() then return end
             local blocker = dragBlockers[f]
             if blocker and blocker(i.Position) then return end
-            d = true; s = i.Position; sp = f.Position
+            d = true; moved = false; s = i.Position; sp = f.Position
             if Fn.dragState then Fn.dragState(f, true) end
         end
     end)
     UIS.InputChanged:Connect(function(i)
         if d and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
             local dd = i.Position - s
-            f.Position = UDim2.new(sp.X.Scale, sp.X.Offset + dd.X, sp.Y.Scale, sp.Y.Offset + dd.Y)
+            if not moved and dd.Magnitude > 4 then moved = true end
+            if moved or not onClick then
+                f.Position = UDim2.new(sp.X.Scale, sp.X.Offset + dd.X, sp.Y.Scale, sp.Y.Offset + dd.Y)
+            end
         end
     end)
     UIS.InputEnded:Connect(function(i)
-        if d and (i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch) then
-            d = false; if Fn.dragState then Fn.dragState(f, false) end
+        if d and isPress(i) then
+            d = false
+            if Fn.dragState then Fn.dragState(f, false) end
+            if onClick and not moved then pcall(onClick) end
         end
     end)
 end
-local glassBlur = new("BlurEffect", {Name="OwoGlassBlur", Size=0, Parent=Lighting})
+local glassBlur = new("BlurEffect", {Name="OwoGlassBlur", Size=0, Enabled=false, Parent=Lighting})
+Fn.dragState = function() end
+Fn.syncGlass = function() end
 
 -- ══════════════════════════════════════════════════════════════
 -- UI SOUNDS
@@ -253,336 +270,87 @@ Fn.setUiSoundId = function(newId)
 end
 
 -- ══════════════════════════════════════════════════════════════
--- GLASS ENGINE
+-- LIQUID GLASS v2
+-- Layered frost + specular gloss + a rim light that follows your cursor,
+-- plus a real blur of the world behind the menu.
 -- ══════════════════════════════════════════════════════════════
 do
-    local SG = {panels = {}}
-    Glass.SG = SG
-    local MAX_CELLS, OUT_PX, MAX_OUT = 9000, 2, 60000
-    SG.budget = 3e-3
-    local exp, clamp, floor, ceil, min, max, clock = math.exp, math.clamp, math.floor, math.ceil, math.min, math.max, os.clock
-    local CH = {"tR","tG","tB","cR","cG","cB"}
-    local function trunc(x) if x >= 0 then return floor(x) end return ceil(x) end
-    local function gcd(a, b) while b ~= 0 do a, b = b, a % b end return a end
-    local function pickStride(n) local s = max(1, floor(n * 0.618)); while s > 1 and gcd(s, n) ~= 1 do s -= 1 end; return s end
-    local function rrect(px, py, W, H, R)
-        local hx, hy = W*0.5, H*0.5
-        local dx, dy = px - hx, py - hy
-        local ax, ay = math.abs(dx) - (hx - R), math.abs(dy) - (hy - R)
-        local sx, sy = dx < 0 and 1 or -1, dy < 0 and 1 or -1
-        if ax > 0 and ay > 0 then
-            local l = math.sqrt(ax*ax + ay*ay); return R - l, sx*ax/l, sy*ay/l
-        elseif ax > ay then return R - ax, sx, 0 end
-        return R - ay, 0, sy
+    local G = {panels = {}}
+    Glass.G = G
+    local clamp, exp = math.clamp, math.exp
+    local function kp(t, v) return NumberSequenceKeypoint.new(t, clamp(v, 0, 1)) end
+    Glass.styles = {
+        Frosted  = {clarity=62, blur=10, shine=0.55, tint=0.00},
+        Clear    = {clarity=88, blur=4,  shine=0.80, tint=0.00},
+        Tinted   = {clarity=70, blur=8,  shine=0.50, tint=0.40},
+        Crystal  = {clarity=80, blur=14, shine=1.00, tint=0.12},
+        Midnight = {clarity=42, blur=12, shine=0.35, tint=0.20},
+    }
+    Glass.styleOrder = {"Frosted","Clear","Tinted","Crystal","Midnight"}
+    Glass.winT = function() return 0.25 + (clamp(Glass.clarity, 30, 100) - 30) / 70 * 0.55 end
+
+    function G.decorate(f, opts)
+        opts = opts or {}
+        if G.panels[f] then return G.panels[f] end
+        local cr = f:FindFirstChildOfClass("UICorner")
+        local function rc(o) if cr then new("UICorner", {CornerRadius=cr.CornerRadius, Parent=o}) end end
+        local frost = new("Frame", {Name="OwoGlassFrost", Size=UDim2.fromScale(1,1), BackgroundColor3=Color3.new(1,1,1), BorderSizePixel=0, ZIndex=0, Visible=false, Parent=f}); rc(frost)
+        local fg = new("UIGradient", {Rotation=90, Parent=frost})
+        local gloss = new("Frame", {Name="OwoGlassGloss", Position=UDim2.new(0,1,0,1), Size=UDim2.new(1,-2,0.5,0), BackgroundColor3=Color3.new(1,1,1), BorderSizePixel=0, ZIndex=0, Visible=false, Parent=f}); rc(gloss)
+        local gg = new("UIGradient", {Rotation=90, Parent=gloss})
+        local rim = new("Frame", {Name="OwoGlassRim", Size=UDim2.fromScale(1,1), BackgroundTransparency=1, BorderSizePixel=0, ZIndex=400, Visible=false, Parent=f}); rc(rim)
+        local st = new("UIStroke", {Color=Color3.new(1,1,1), Thickness=1.5, ApplyStrokeMode=Enum.ApplyStrokeMode.Border, Parent=rim})
+        local rg = new("UIGradient", {Rotation=45, Parent=st})
+        local P = {f=f, frost=frost, fg=fg, gloss=gloss, gg=gg, rim=rim, stroke=st, rg=rg, vx=0.7, vy=0.7, always=opts.always, small=opts.small}
+        G.panels[f] = P
+        f.Destroying:Connect(function() G.panels[f] = nil end)
+        return P
     end
-    local function freeImg(P) if P.img then pcall(function() P.img:Destroy() end); P.img = nil end end
-    local function axis(count, cells)
-        local i0, i1, fr = table.create(count,1), table.create(count,1), table.create(count,0)
-        for x = 1, count do
-            local g = clamp((x-0.5)*cells/count - 0.5, 0, cells - 1)
-            local a = floor(g); i0[x], i1[x], fr[x] = a+1, min(a+1, cells-1)+1, g - a
-        end
-        return i0, i1, fr
+
+    local function refresh(P)
+        if not P.f.Parent then G.panels[P.f] = nil; return end
+        local on = (Glass.on or P.always) and not P.f:GetAttribute("LBare")
+        P.frost.Visible, P.gloss.Visible, P.rim.Visible = on, on, on
+        if not on then return end
+        local s, tint = Glass.shine, Glass.tint
+        local k = P.small and 0.7 or 1
+        P.frost.BackgroundColor3 = Color3.new(1,1,1):Lerp(T.Accent, tint)
+        P.fg.Transparency = NumberSequence.new({kp(0, 1-0.20*s*k), kp(0.55, 1-0.035*s*k), kp(1, 1-0.10*s*k)})
+        P.gg.Transparency = NumberSequence.new({kp(0, 1-0.30*s*k), kp(1, 1)})
+        P.stroke.Thickness = 0.7 + Glass.refraction * 0.35
+        P.rg.Color = ColorSequence.new(Color3.new(1,1,1):Lerp(T.Accent, tint*0.6))
+        local bright = clamp(0.05 + (1-s)*0.4, 0, 0.7)
+        P.rg.Transparency = NumberSequence.new({kp(0, bright), kp(0.3, 0.93), kp(0.7, 0.93), kp(1, bright+0.1)})
+        if P.always then P.f.BackgroundTransparency = Glass.winT() end
     end
-    local rp = RaycastParams.new(); rp.FilterType = Enum.RaycastFilterType.Exclude; rp.IgnoreWater = false
-    local function samplePixel(x, y, topLayer)
-        local guis = pg:GetGuiObjectsAtPosition(x, y)
-        local r, g, b, t = 0, 0, 0, 1
-        local ti = topLayer and table.find(guis, topLayer) or 0
-        for i = ti + 1, #guis do
-            local gui = guis[i]
-            local p, s = gui.AbsolutePosition, gui.AbsoluteSize
-            if x >= p.X and x < p.X + s.X and y >= p.Y and y < p.Y + s.Y then
-                local ga = 1 - gui.BackgroundTransparency
-                if gui:IsA("TextLabel") or gui:IsA("TextButton") or gui:IsA("TextBox") then
-                    ga = math.min(ga, 1 - gui.TextTransparency)
-                elseif gui:IsA("ImageLabel") or gui:IsA("ImageButton") then
-                    ga = math.min(ga, 1 - gui.ImageTransparency)
-                end
-                if ga > 0 then
-                    local w = t * ga
-                    r, g, b = r + w*gui.BackgroundColor3.R, g + w*gui.BackgroundColor3.G, b + w*gui.BackgroundColor3.B
-                    t = t * (1 - ga)
-                    if t <= 0 then break end
-                end
-            end
-        end
-        if t > 0 then
-            rp.FilterDescendantsInstances = player.Character and {player.Character} or {}
-            local ray = camera:ScreenPointToRay(x, y, 0)
-            local res = workspace:Raycast(ray.Origin, ray.Direction * 500, rp)
-            local wr, wg, wb
-            if res and res.Instance then
-                wr, wg, wb = res.Instance.Color.R, res.Instance.Color.G, res.Instance.Color.B
-            else
-                local df = math.abs(12 - Lighting.ClockTime) / 12
-                local c = Color3.fromRGB(89,178,210):Lerp(Color3.fromRGB(2,7,30), df)
-                wr, wg, wb = c.R, c.G, c.B
-            end
-            r, g, b = r + t*wr, g + t*wg, b + t*wb
-        end
-        return r, g, b
-    end
-    local function rebuild(P)
-        local size = P.frame.AbsoluteSize
-        P.lastBuild = clock()
-        if size.X < 8 or size.Y < 8 then return end
-        local c = 3 + Glass.blur * 0.5
-        local gw, gh = max(2, ceil(size.X/c)), max(2, ceil(size.Y/c))
-        if gw*gh > MAX_CELLS then
-            local s = math.sqrt(MAX_CELLS/(gw*gh)); gw, gh = max(2, floor(gw*s)), max(2, floor(gh*s))
-        end
-        local ow, oh = max(gw, ceil(size.X/OUT_PX)), max(gh, ceil(size.Y/OUT_PX))
-        if ow*oh > MAX_OUT then
-            local s = math.sqrt(MAX_OUT/(ow*oh)); ow, oh = max(gw, floor(ow*s)), max(gh, floor(oh*s))
-        end
-        P.sizeX, P.sizeY = size.X, size.Y
-        P.band = min(42, min(size.X, size.Y) * 0.45)
-        if not (P.img and P.ow == ow and P.oh == oh) then
-            local res = Vector2.new(ow, oh)
-            local ok, img = pcall(AssetService.CreateEditableImage, AssetService, {Size=res})
-            if not (ok and img) and P.img then freeImg(P); ok, img = pcall(AssetService.CreateEditableImage, AssetService, {Size=res}) end
-            if not (ok and img) then P.gw = nil; return end
-            freeImg(P)
-            P.img, P.res, P.ow, P.oh = img, res, ow, oh
-            P.pane.ImageContent = Content.fromObject(img)
-            P.out = buffer.create(ow*oh*4)
-        end
-        if P.gw ~= gw or P.gh ~= gh then
-            local n = gw*gh
-            local tint = P.frame.BackgroundColor3
-            local fresh = {}
-            for k, name in ipairs(CH) do fresh[name] = table.create(n, (k%3==1 and tint.R) or (k%3==2 and tint.G) or tint.B) end
-            if P.gw then
-                local ogw, ogh = P.gw, P.gh
-                for y = 0, gh-1 do
-                    local oy = min(ogh-1, floor((y+0.5)*ogh/gh))
-                    for x = 0, gw-1 do
-                        local j = oy*ogw + min(ogw-1, floor((x+0.5)*ogw/gw)) + 1
-                        local i = y*gw + x + 1
-                        for _, name in ipairs(CH) do fresh[name][i] = P[name][j] end
-                    end
-                end
-            end
-            for _, name in ipairs(CH) do P[name] = fresh[name] end
-            P.gw, P.gh, P.n = gw, gh, n
-            P.hR, P.hG, P.hB = table.create(n,0), table.create(n,0), table.create(n,0)
-            P.bR, P.bG, P.bB = table.create(n,0), table.create(n,0), table.create(n,0)
-            P.rowR, P.rowG, P.rowB = table.create(gw,0), table.create(gw,0), table.create(gw,0)
-            P.queue, P.queued, P.qh, P.idx, P.stride = {}, {}, 1, 0, pickStride(n)
-        end
-        P.cx0, P.cx1, P.cfx = axis(ow, gw); P.ry0, P.ry1, P.rfy = axis(oh, gh)
-        local R, W, H = P.radius, size.X, size.Y
-        local rim = table.create(ow*oh, 0)
-        for y = 0, oh-1 do
-            local v = (y+0.5)/oh; local py = v*H; local sheen = (1-v)^3 * 0.05
-            for x = 0, ow-1 do
-                local d, nx, ny = rrect((x+0.5)/ow*W, py, W, H, R)
-                local lit = nx*0.55 + ny*0.83
-                local spec = (0.10 + 0.40*max(lit,0) + 0.18*max(-lit,0)) * clamp(1 - d/5, 0, 1)
-                local glow = clamp(1 - d/26, 0, 1)
-                rim[y*ow + x + 1] = spec + glow*glow*0.07 + sheen
-            end
-        end
-        P.rim = rim; P.dirty = true
-    end
-    local function push(P, k) if not P.queued[k] then P.queued[k] = true; P.queue[#P.queue+1] = k end end
-    local function nextCell(P)
-        local q = P.queue
-        while P.qh <= #q do
-            local k = q[P.qh]; P.qh += 1; P.queued[k] = nil
-            if k < P.n then return k end
-        end
-        if P.qh > 1 then table.clear(q); P.qh = 1 end
-        local k = P.idx; P.idx = (k + P.stride) % P.n; return k
-    end
-    local function shiftGrid(P, sx, sy)
-        local gw, gh, n = P.gw, P.gh, P.n
-        for _, name in ipairs(CH) do
-            local src, dst = P[name], table.create(n, 0)
-            for y = 0, gh-1 do
-                local row = clamp(y+sy, 0, gh-1)*gw + 1; local base = y*gw + 1
-                for x = 0, gw-1 do dst[base + x] = src[row + clamp(x+sx, 0, gw-1)] end
-            end
-            P[name] = dst
-        end
-        for y = 0, gh-1 do
-            local oy = y + sy
-            for x = 0, gw-1 do
-                local ox = x + sx
-                if ox < 0 or ox >= gw or oy < 0 or oy >= gh then push(P, y*gw + x) end
-            end
-        end
-        P.dirty = true
-    end
-    local function sampleCell(P, k, ox, oy)
-        local gw, gh = P.gw, P.gh
-        local u, v = (k % gw + 0.5)/gw, (k // gw + 0.5)/gh
-        local W, H = P.sizeX, P.sizeY
-        local sx, sy = u*W, v*H
-        local d, nx, ny = rrect(sx, sy, W, H, P.radius)
-        local band = P.band
-        if d < band then
-            local t = 1 - max(d, 0)/band
-            local p = t*t*band*0.2*Glass.refraction
-            sx += nx*p; sy += ny*p
-        end
-        local r, g, b = samplePixel(ox+sx, oy+sy, P.pane)
-        local i = k + 1
-        P.tR[i], P.tG[i], P.tB[i] = r, g, b
-    end
-    local function composite(P, a)
-        local tint = P.frame.BackgroundColor3
-        local ta = clamp(1 - (P.t or 0.6), 0, 1)
-        local changed = P.dirty or P.lastTint ~= tint or P.lastTa ~= ta
-        P.dirty, P.lastTint, P.lastTa = false, tint, ta
-        local tR, tG, tB, cR, cG, cB = P.tR, P.tG, P.tB, P.cR, P.cG, P.cB
-        local moved = false
-        for i = 1, P.n do
-            local dr, dg, db = tR[i]-cR[i], tG[i]-cG[i], tB[i]-cB[i]
-            if dr > 0.003 or dr < -0.003 or dg > 0.003 or dg < -0.003 or db > 0.003 or db < -0.003 then
-                cR[i] += dr*a; cG[i] += dg*a; cB[i] += db*a; moved = true
-            end
-        end
-        if not (moved or changed) then return end
-        local gw, gh, ow, oh = P.gw, P.gh, P.ow, P.oh
-        local ia = 1 - ta
-        local kR, kG, kB = tint.R*ta, tint.G*ta, tint.B*ta
-        local hR, hG, hB, bR, bG, bB = P.hR, P.hG, P.hB, P.bR, P.bG, P.bB
-        local wc, ws = 0.5, 0.25
-        for y = 0, gh-1 do
-            local base = y*gw
-            for x = 1, gw do
-                local i = base + x
-                local l, r = base + (x > 1 and x-1 or 1), base + (x < gw and x+1 or gw)
-                hR[i] = (cR[l]+cR[r])*ws + cR[i]*wc
-                hG[i] = (cG[l]+cG[r])*ws + cG[i]*wc
-                hB[i] = (cB[l]+cB[r])*ws + cB[i]*wc
-            end
-        end
-        for y = 0, gh-1 do
-            local base = y*gw
-            local up, dn = (y > 0 and y-1 or 0)*gw, (y < gh-1 and y+1 or gh-1)*gw
-            for x = 1, gw do
-                local i, u, d = base+x, up+x, dn+x
-                local r = (hR[u]+hR[d])*ws + hR[i]*wc
-                local g = (hG[u]+hG[d])*ws + hG[i]*wc
-                local b = (hB[u]+hB[d])*ws + hB[i]*wc
-                local L = r*0.299 + g*0.587 + b*0.114
-                bR[i] = max(L + (r-L)*1.3, 0)*0.85*ia + kR
-                bG[i] = max(L + (g-L)*1.3, 0)*0.85*ia + kG
-                bB[i] = max(L + (b-L)*1.3, 0)*0.85*ia + kB
-            end
-        end
-        local rowR, rowG, rowB = P.rowR, P.rowG, P.rowB
-        local cx0, cx1, cfx, ry0, ry1, rfy = P.cx0, P.cx1, P.cfx, P.ry0, P.ry1, P.rfy
-        local rim, out = P.rim, P.out
-        local o, p = 0, 0
-        for y = 1, oh do
-            local r0, r1, fy = (ry0[y]-1)*gw, (ry1[y]-1)*gw, rfy[y]
-            for x = 1, gw do
-                local A, B = r0+x, r1+x
-                local vA = bR[A]; rowR[x] = vA + (bR[B]-vA)*fy
-                vA = bG[A]; rowG[x] = vA + (bG[B]-vA)*fy
-                vA = bB[A]; rowB[x] = vA + (bB[B]-vA)*fy
-            end
-            for x = 1, ow do
-                local i0, i1, fx = cx0[x], cx1[x], cfx[x]
-                p += 1
-                local w = rim[p]
-                local v0 = rowR[i0]; local r = v0 + (rowR[i1]-v0)*fx + w
-                v0 = rowG[i0]; local g = v0 + (rowG[i1]-v0)*fx + w
-                v0 = rowB[i0]; local b = v0 + (rowB[i1]-v0)*fx + w
-                r = r >= 1 and 255 or floor(r*255+0.5)
-                g = g >= 1 and 255 or floor(g*255+0.5)
-                b = b >= 1 and 255 or floor(b*255+0.5)
-                buffer.writeu32(out, o, r + g*256 + b*65536 + 4278190080)
-                o += 4
-            end
-        end
-        P.img:WritePixelsBuffer(Vector2.zero, P.res, out)
-    end
-    local function syncPane(P)
-        local f, pane, g = P.frame, P.pane, P.group
-        if g then
-            if pane.Position ~= f.Position then pane.Position = f.Position end
-            if pane.Size ~= f.Size then pane.Size = f.Size end
-            if pane.ImageTransparency ~= g.GroupTransparency then pane.ImageTransparency = g.GroupTransparency end
-        end
-        local vis = P.on and f.Visible and P.gw ~= nil
-        if pane.Visible ~= vis then pane.Visible = vis end
-    end
-    local active = {}
-    local function step(dt)
-        table.clear(active)
-        local relayout = SG.relayoutAt and clock() >= SG.relayoutAt
-        if relayout then SG.relayoutAt = nil end
-        for _, P in pairs(SG.panels) do
-            if P.on and P.frame.Parent and P.frame.Visible and (P.always or UI.isOpen) then
-                local size = P.frame.AbsoluteSize
-                if (not P.gw and clock() - P.lastBuild > 0.5) or (P.gw and (relayout or ((size.X ~= P.sizeX or size.Y ~= P.sizeY) and clock() - P.lastBuild > 0.12))) then
-                    rebuild(P)
-                end
-                if P.gw then
-                    local pos = P.frame.AbsolutePosition
-                    P.cellW, P.cellH = P.sizeX/P.gw, P.sizeY/P.gh
-                    if P.lastPos then
-                        P.accX += pos.X - P.lastPos.X; P.accY += pos.Y - P.lastPos.Y
-                        local sx, sy = trunc(P.accX/P.cellW), trunc(P.accY/P.cellH)
-                        if math.abs(sx) >= P.gw or math.abs(sy) >= P.gh then P.accX, P.accY = 0, 0
-                        elseif sx ~= 0 or sy ~= 0 then
-                            shiftGrid(P, sx, sy)
-                            P.accX -= sx*P.cellW; P.accY -= sy*P.cellH
-                        end
-                    else P.accX, P.accY = 0, 0 end
-                    P.lastPos = pos
-                    active[#active+1] = P
-                end
-            end
-        end
-        local np = #active
-        if np == 0 then return end
-        if dt > 1/50 then SG.budget = max(1e-3, SG.budget*0.8) else SG.budget = min(4.5e-3, SG.budget+0.1e-3) end
-        local deadline = clock() + SG.budget
-        local pi, guard = 0, 0
-        repeat
-            pi = pi % np + 1
-            local P = active[pi]
-            sampleCell(P, nextCell(P), P.lastPos.X - P.accX, P.lastPos.Y - P.accY)
-            guard += 1
-        until clock() >= deadline or guard >= 8000
-        SG.frameN = (SG.frameN or 0) + 1
-        for k, P in ipairs(active) do
-            P.accDt = (P.accDt or 0) + dt
-            if P.dirty or (SG.frameN + k) % 2 == 0 then
-                composite(P, 1 - exp(-P.accDt*28)); P.accDt = 0
-            end
-        end
-    end
-    function SG.enable(f, on, t, always)
-        local P = SG.panels[f]
-        if not P then
-            if not on then return end
-            local group = f.Parent and f.Parent:IsA("CanvasGroup") and f.Parent or nil
-            local pane = new("ImageLabel", {Name="OwoGlassPane", Size=group and f.Size or UDim2.fromScale(1,1), Position=group and f.Position or nil, BackgroundTransparency=1, ScaleType=Enum.ScaleType.Stretch, ZIndex=group and (group.ZIndex-1) or 0, Visible=false, Parent=group and group.Parent or f})
-            local fc = f:FindFirstChildOfClass("UICorner")
-            if fc then new("UICorner", {CornerRadius=fc.CornerRadius, Parent=pane}) end
-            P = {frame=f, pane=pane, group=group, lastBuild=0, radius=fc and fc.CornerRadius.Offset or 0}
-            SG.panels[f] = P
-        end
-        P.on = on; P.always = always; P.lastPos = nil
-        if on then P.t = t; f.BackgroundTransparency = 1
-        else freeImg(P); P.gw = nil; P.pane.Visible = false end
-    end
-    function SG.setT(f, t) local P = SG.panels[f]; if P then P.t = t end end
+    function G.refreshAll() for _, P in pairs(G.panels) do refresh(P) end end
+    Glass.refreshAll = G.refreshAll
+
+    local t0, blurSize = os.clock(), 0
     RS.RenderStepped:Connect(function(dt)
-        local ok, err = pcall(function()
-            if Glass.on then
-                step(dt)
-                for _, P in pairs(SG.panels) do if P.on then syncPane(P) end end
+        local m = UIS:GetMouseLocation()
+        local tnow = os.clock() - t0
+        for f, P in pairs(G.panels) do
+            if (Glass.on or P.always) and f.Parent and f.Visible then
+                local abs = f.AbsoluteSize
+                if abs.X > 0 then
+                    local c = f.AbsolutePosition + abs / 2
+                    local dx, dy = m.X - c.X, m.Y - c.Y
+                    local len = math.sqrt(dx*dx + dy*dy)
+                    local tx, ty = 0.7, 0.7
+                    if Glass.anim and len > 1 then tx, ty = dx/len, dy/len end
+                    local a = 1 - exp(-dt * (Glass.anim and 7 or 12))
+                    P.vx += (tx - P.vx) * a; P.vy += (ty - P.vy) * a
+                    local rot = math.deg(math.atan2(P.vy, P.vx))
+                    if Glass.anim then rot += 10 * math.sin(tnow * 0.8 + abs.X * 0.01) end
+                    P.rg.Rotation = rot
+                end
             end
-        end)
-        if not ok and not SG.warned then SG.warned = true; warn("[>.<] glass: "..tostring(err)) end
+        end
+        local target = (Glass.on and Glass.worldBlur and UI.isOpen) and Glass.blur or 0
+        blurSize = blurSize + (target - blurSize) * (1 - exp(-dt * 8))
+        glassBlur.Size = blurSize
+        glassBlur.Enabled = blurSize > 0.1
     end)
 end
 
@@ -1582,15 +1350,51 @@ do
 end
 
 -- ══════════════════════════════════════════════════════════════
+-- WIDGET EDIT MODE  (widgets can only be moved / resized / re-styled while the chat is open)
+-- ══════════════════════════════════════════════════════════════
+local Edit = { focused=false, last=-10, on=false, listeners={} }
+do
+    local function chatFocused()
+        local ok, v = pcall(function() return TextChatService.ChatInputBarConfiguration.IsFocused end)
+        if ok and v == true then return true end
+        local okb, tb = pcall(function() return UIS:GetFocusedTextBox() end)
+        if okb and tb and tb.Name == "ChatBar" then return true end
+        return false
+    end
+    -- chat loses focus the moment you click a widget, so a short grace period keeps edit mode alive for that click
+    Fn.canEdit = function() return feat.editAnywhere or Edit.focused or (os.clock() - Edit.last) < 0.35 end
+    RS.RenderStepped:Connect(function()
+        local f = chatFocused()
+        if f then Edit.last = os.clock() end
+        Edit.focused = f
+        local on = Fn.canEdit()
+        if on ~= Edit.on then
+            Edit.on = on
+            for _, fn in ipairs(Edit.listeners) do pcall(fn, on) end
+        end
+    end)
+end
+
+-- ══════════════════════════════════════════════════════════════
 -- OVERLAYS
 -- ══════════════════════════════════════════════════════════════
 do
     local ovGui = new("ScreenGui", {Name="OwoOverlays",ResetOnSpawn=false,IgnoreGuiInset=true,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,Parent=pg})
     UI.ovGui = ovGui
     UI.defaultPos = {}
-    local function mkOv(name, sz, pos)
-        local f = new("Frame",{Size=sz,Position=pos,BackgroundColor3=T.Card,BackgroundTransparency=TR.Overlay,BorderSizePixel=0,Visible=false,Active=true,ZIndex=30,Parent=ovGui})
-        corner(f, RM); stroke(f, 1, 0.6, T.Line); regRef(f,"BackgroundColor3","Card"); addSheen(f); drag(f)
+    local function mkOv(name, sz, pos, bare, onClick)
+        local f = new("Frame",{Size=sz,Position=pos,BackgroundColor3=T.Card,BackgroundTransparency=bare and 1 or TR.Overlay,BorderSizePixel=0,Visible=false,Active=false,ZIndex=30,Parent=ovGui})
+        corner(f, bare and 12 or RM)
+        if bare then
+            f:SetAttribute("Bare", true)
+        else
+            local s = stroke(f, 1, 0.6, T.Line, true); regRef(s, "Color", "Line"); s.Name = "OwoLine"
+            regRef(f, "BackgroundColor3", "Card"); addSheen(f)
+            Glass.G.decorate(f, {small=true})
+        end
+        local es = new("UIStroke",{Name="OwoEdit",Color=T.Accent,Thickness=1.5,Transparency=0.1,ApplyStrokeMode=Enum.ApplyStrokeMode.Border,Enabled=false,Parent=f})
+        regRef(es, "Color", "Accent")
+        drag(f, f, function() return Fn.canEdit() end, onClick or function() if Fn.cycleLayout then Fn.cycleLayout(name) end end)
         overlays[name] = f; UI.defaultPos[name] = pos
         return f
     end
@@ -1605,6 +1409,21 @@ do
     mkOv("lyrics", UDim2.new(0,560,0,38), UDim2.new(0.5,-280,0,12))
     mkOv("keystrokes",  UDim2.new(0,148,0,96),  UDim2.new(0,20,0,50))
     mkOv("mousestrokes",UDim2.new(0,140,0,106), UDim2.new(0,20,0,160))
+    mkOv("potions", UDim2.new(0,200,0,71), UDim2.new(0,20,0.5,-40), true, function() if Fn.potionsCycle then Fn.potionsCycle() end end)
+
+    -- edit-mode hint pill
+    local hint = new("Frame",{Size=UDim2.new(0,430,0,28),Position=UDim2.new(0.5,-215,0,8),BackgroundColor3=T.Card,BackgroundTransparency=0.15,BorderSizePixel=0,Visible=false,ZIndex=60,Parent=ovGui})
+    corner(hint, 14); regRef(hint, "BackgroundColor3", "Card")
+    local hs = stroke(hint, 1, 0.3, T.Accent, true); regRef(hs, "Color", "Accent")
+    local hl = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(1,0,1,0),Font=Enum.Font.GothamMedium,Text="EDIT MODE  •  drag = move  •  click a widget = next layout  •  corner = resize",TextColor3=T.Text,TextSize=11,ZIndex=61,Parent=hint})
+    regRef(hl, "TextColor3", "Text")
+    table.insert(Edit.listeners, function(on)
+        for _, f in pairs(overlays) do
+            f.Active = on
+            local es = f:FindFirstChild("OwoEdit"); if es then es.Enabled = on end
+        end
+        hint.Visible = on
+    end)
 
     do
         local sb = overlays.statusBar
@@ -1711,8 +1530,9 @@ do
         mkKey("Space", "SPACE",  8, 62, 124, 20)
         local grip = new("TextButton", {
             Size = UDim2.new(0, 18, 0, 18), Position = UDim2.new(1, -18, 1, -18),
-            BackgroundTransparency = 1, Text = "", AutoButtonColor = false, ZIndex = 60, Parent = ks,
+            BackgroundTransparency = 1, Text = "", AutoButtonColor = false, ZIndex = 60, Visible = false, Parent = ks,
         })
+        table.insert(Edit.listeners, function(on) grip.Visible = on end)
         for i = 1, 2 do
             new("Frame", {Size = UDim2.new(0, 9, 0, 1), Position = UDim2.new(0, 5 + (i-1)*3, 0, 13 - (i-1)*3), BackgroundColor3 = T.Muted, BackgroundTransparency = 0.4, BorderSizePixel = 0, Rotation = 45, ZIndex = 61, Parent = grip})
         end
@@ -1722,6 +1542,7 @@ do
         end
         local ksDrag, ksStart, ksStartScale = false, nil, 1
         grip.InputBegan:Connect(function(i)
+            if not Fn.canEdit() then return end
             if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
                 ksDrag = true; ksStart = i.Position; ksStartScale = ksScale.Scale
             end
@@ -1817,8 +1638,9 @@ do
         corner(mouseDot, 4); regRef(mouseDot, "BackgroundColor3", "Accent")
         local grip = new("TextButton", {
             Size = UDim2.new(0, 18, 0, 18), Position = UDim2.new(1, -18, 1, -18),
-            BackgroundTransparency = 1, Text = "", AutoButtonColor = false, ZIndex = 60, Parent = ms,
+            BackgroundTransparency = 1, Text = "", AutoButtonColor = false, ZIndex = 60, Visible = false, Parent = ms,
         })
+        table.insert(Edit.listeners, function(on) grip.Visible = on end)
         for i = 1, 2 do
             new("Frame", {Size = UDim2.new(0, 9, 0, 1), Position = UDim2.new(0, 5 + (i-1)*3, 0, 13 - (i-1)*3), BackgroundColor3 = T.Muted, BackgroundTransparency = 0.4, BorderSizePixel = 0, Rotation = 45, ZIndex = 61, Parent = grip})
         end
@@ -1828,6 +1650,7 @@ do
         end
         local msDrag, msStart, msStartScale = false, nil, 1
         grip.InputBegan:Connect(function(i)
+            if not Fn.canEdit() then return end
             if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
                 msDrag = true; msStart = i.Position; msStartScale = msScale.Scale
             end
@@ -1905,33 +1728,119 @@ do
         spBar = new("Frame",{Size=UDim2.new(0,0,1,0),BackgroundColor3=T.Accent,BorderSizePixel=0,Parent=bg}); regRef(spBar,"BackgroundColor3","Accent")
     end
 
-    local kbList
+    -- ══════════ KEYBINDS overlay: 2 layouts (List / Pills) that morph smoothly ══════════
     do
         local kb = overlays.keybinds
-        local ic = new("Frame",{Size=UDim2.new(0,12,0,10),Position=UDim2.new(0,10,0,8),BackgroundColor3=T.Accent,BorderSizePixel=0,Parent=kb}); corner(ic,3); regRef(ic,"BackgroundColor3","Accent")
-        local hd = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,28,0,0),Size=UDim2.new(1,-34,0,26),Font=Enum.Font.GothamBold,Text="KeyBinds",TextColor3=T.Text,TextSize=11,TextXAlignment=Enum.TextXAlignment.Left,Parent=kb}); regRef(hd,"TextColor3","Text")
-        kbList = new("Frame",{Position=UDim2.new(0,0,0,26),Size=UDim2.new(1,0,1,-26),BackgroundTransparency=1,Parent=kb})
-        new("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,2),Parent=kbList})
-        new("UIPadding",{PaddingLeft=UDim.new(0,10),PaddingRight=UDim.new(0,10),Parent=kbList})
+        local TextService = game:GetService("TextService")
+        local W1 = 214
         local SHORT = {RightShift="RShift",LeftShift="LShift",LeftControl="LCtrl",RightControl="RCtrl",LeftAlt="LAlt",RightAlt="RAlt",Backquote="Grave",Return="Enter",Backspace="Bksp"}
+        local function txtW(str, size, font)
+            local ok, v = pcall(function() return TextService:GetTextSize(str, size, font, Vector2.new(400, 50)).X end)
+            return ok and v or (#str * size * 0.55)
+        end
+        local function pillBg(parent)
+            local f = new("Frame",{BackgroundColor3=T.Card,BackgroundTransparency=1,BorderSizePixel=0,Parent=parent}); corner(f, 9)
+            return f
+        end
+        local hIconBg = pillBg(kb); regRef(hIconBg, "BackgroundColor3", "Card")
+        local hIcon = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.fromScale(1,1),Font=Enum.Font.GothamBold,Text="⌨",TextColor3=T.Accent,TextSize=15,Parent=hIconBg}); regRef(hIcon, "TextColor3", "Accent")
+        local hTitleBg = pillBg(kb); regRef(hTitleBg, "BackgroundColor3", "Card")
+        local hTitle = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.fromScale(1,1),Font=Enum.Font.GothamBold,Text="Keybinds",TextColor3=T.Text,TextSize=13,TextXAlignment=Enum.TextXAlignment.Left,Parent=hTitleBg}); regRef(hTitle, "TextColor3", "Text")
+        local emptyLbl = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(0,150,0,18),Font=Enum.Font.Gotham,Text="No keybinds set",TextColor3=T.Muted,TextSize=11,TextXAlignment=Enum.TextXAlignment.Left,Parent=kb}); regRef(emptyLbl, "TextColor3", "Muted")
+        local rowsHolder = new("Frame",{BackgroundTransparency=1,Size=UDim2.fromScale(1,1),Parent=kb})
+        local rowObjs, list = {}, {}
+
+        local function apply(animate)
+            local st = feat.layout_keybinds or 1
+            if st < 1 or st > 2 then st = 1 end
+            local n = #list
+            local function mv(o, props, dur)
+                if animate then tween(o, dur or 0.34, props, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+                else for k, v in pairs(props) do o[k] = v end end
+            end
+            local bare = (st == 2)
+            kb:SetAttribute("LBare", bare)
+            local ln = kb:FindFirstChild("OwoLine")
+            if ln then mv(ln, {Transparency = bare and 1 or 0.6}, 0.25) end
+            mv(kb, {BackgroundTransparency = bare and 1 or TR.Overlay}, 0.25)
+            if Glass.refreshAll then Glass.refreshAll() end
+            emptyLbl.Visible = (n == 0)
+            local keyTint = T.Accent:Lerp(T.Bg, 0.62)
+            if st == 1 then
+                mv(hIconBg, {Position=UDim2.new(0,12,0,9), Size=UDim2.new(0,22,0,22), BackgroundTransparency=1})
+                mv(hTitleBg, {Position=UDim2.new(0,38,0,9), Size=UDim2.new(0,W1-50,0,22), BackgroundTransparency=1})
+                mv(hTitle, {Position=UDim2.new(0,0,0,0)})
+                emptyLbl.Position = UDim2.new(0,14,0,40)
+                for i, ro in ipairs(rowObjs) do
+                    local y = 40 + (i-1)*24
+                    local kw = math.max(32, ro.kw + 16)
+                    mv(ro.nameBg, {Position=UDim2.new(0,14,0,y), Size=UDim2.new(0,W1-kw-34,0,20), BackgroundTransparency=1})
+                    mv(ro.nameLbl, {Position=UDim2.new(0,0,0,0)})
+                    mv(ro.keyBg, {Position=UDim2.new(0,W1-12-kw,0,y+1), Size=UDim2.new(0,kw,0,18), BackgroundTransparency=0.3, BackgroundColor3=keyTint})
+                    mv(ro.keyLbl, {TextColor3=T.Accent})
+                end
+                mv(kb, {Size=UDim2.new(0,W1,0,40 + math.max(n,1)*24 + 8)})
+            else
+                local maxW, rowW = 0, {}
+                for i, ro in ipairs(rowObjs) do
+                    local nw = math.max(64, ro.nw + 24)
+                    local kw = math.max(36, ro.kw + 20)
+                    rowW[i] = {nw, kw}
+                    maxW = math.max(maxW, nw + 6 + kw)
+                end
+                local W2 = math.max(150, maxW)
+                mv(hIconBg, {Position=UDim2.new(0,0,0,0), Size=UDim2.new(0,28,0,28), BackgroundTransparency=0.1})
+                mv(hTitleBg, {Position=UDim2.new(0,34,0,0), Size=UDim2.new(0,W2-34,0,28), BackgroundTransparency=0.1})
+                mv(hTitle, {Position=UDim2.new(0,12,0,0)})
+                emptyLbl.Position = UDim2.new(0,4,0,36)
+                for i, ro in ipairs(rowObjs) do
+                    local y = 36 + (i-1)*32
+                    local nw, kw = rowW[i][1], rowW[i][2]
+                    mv(ro.nameBg, {Position=UDim2.new(0,0,0,y), Size=UDim2.new(0,nw,0,26), BackgroundTransparency=0.1})
+                    mv(ro.nameLbl, {Position=UDim2.new(0,12,0,0)})
+                    mv(ro.keyBg, {Position=UDim2.new(0,nw+6,0,y), Size=UDim2.new(0,kw,0,26), BackgroundTransparency=0.1, BackgroundColor3=T.Card})
+                    mv(ro.keyLbl, {TextColor3=T.Text})
+                end
+                mv(kb, {Size=UDim2.new(0,W2,0,36 + math.max(n,1)*32 - 6)})
+            end
+        end
+
         Fn.refreshKb = function()
-            for _, c in ipairs(kbList:GetChildren()) do if c:IsA("Frame") or c:IsA("TextLabel") then c:Destroy() end end
-            local list = {}
+            for _, ro in ipairs(rowObjs) do ro.nameBg:Destroy(); ro.keyBg:Destroy() end
+            rowObjs, list = {}, {}
             for _, k in pairs(Keybinds) do if k.key then list[#list+1] = k end end
             table.sort(list, function(a, b) return (a.label or "") < (b.label or "") end)
-            if #list == 0 then
-                new("TextLabel",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,Font=Enum.Font.Gotham,Text="No keybinds set",TextColor3=T.Muted,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,Parent=kbList})
-                kb.Size = UDim2.new(0,190,0,56); return
-            end
             for i, k in ipairs(list) do
-                local row = new("Frame",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,LayoutOrder=i,Parent=kbList})
-                new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(1,-50,1,0),Font=Enum.Font.GothamMedium,Text=k.label or "?",TextColor3=T.Dim,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,Parent=row})
                 local nm = SHORT[k.key.Name] or k.key.Name
-                local w = math.max(28, #nm*6+12)
-                local chip = new("TextLabel",{Size=UDim2.new(0,w,0,15),Position=UDim2.new(1,-w,0.5,-8),BackgroundColor3=T.Accent:Lerp(T.Bg,0.75),BorderSizePixel=0,Font=Enum.Font.GothamBold,Text=nm,TextColor3=T.Accent,TextSize=9,Parent=row}); corner(chip,4)
+                local lab = k.label or "?"
+                local nameBg = pillBg(rowsHolder); regRef(nameBg, "BackgroundColor3", "Card")
+                local nameLbl = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.fromScale(1,1),Font=Enum.Font.GothamMedium,Text=lab,TextColor3=T.Dim,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,Parent=nameBg})
+                local keyBg = pillBg(rowsHolder)
+                local keyLbl = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.fromScale(1,1),Font=Enum.Font.GothamBold,Text=nm,TextColor3=T.Text,TextSize=11,Parent=keyBg})
+                rowObjs[i] = {k=k, nameBg=nameBg, nameLbl=nameLbl, keyBg=keyBg, keyLbl=keyLbl, nw=txtW(lab, 12, Enum.Font.GothamMedium), kw=txtW(nm, 11, Enum.Font.GothamBold)}
             end
-            kb.Size = UDim2.new(0,190,0,34 + math.min(#list,14)*20)
+            apply(false)
         end
+        Fn.kbApply = apply
+        Fn.kbCycle = function()
+            feat.layout_keybinds = ((feat.layout_keybinds or 1) % 2) + 1
+            apply(true)
+            notify("Keybinds", "Layout: " .. (feat.layout_keybinds == 1 and "List" or "Pills"))
+        end
+        -- enabled binds light up (accent in List, bright in Pills)
+        task.spawn(function()
+            while true do
+                task.wait(0.25)
+                if kb.Visible then
+                    local st = feat.layout_keybinds or 1
+                    for _, ro in ipairs(rowObjs) do
+                        local on = ro.k.isToggle and ro.k.getState and ro.k.getState()
+                        if st == 1 then ro.nameLbl.TextColor3 = on and T.Accent or T.Dim
+                        else ro.nameLbl.TextColor3 = on and T.Text or T.Muted end
+                    end
+                end
+            end
+        end)
     end
 
     local mhTitle, mhSub, coverImg, playIcon, pauseIcon, mhFill
@@ -1974,6 +1883,220 @@ do
             playIcon.Visible = not Music.playing
             pauseIcon.Visible = Music.playing
             if UI.nowLbl then UI.nowLbl.Text = Music.name end
+            if Fn.potionsRebuild then Fn.potionsRebuild() end
+        end
+    end
+
+    -- ══════════ POTIONS (active effects) ══════════
+    -- Pills glide smoothly between 4 layouts. Click it in edit mode (chat open).
+    do
+        local pw = overlays.potions
+        local ROMAN = {"I","II","III","IV","V","VI","VII","VIII","IX","X"}
+        local STYLES = {"Classic","Mirror","Swap","Inline"}
+        local RH, GP, W = 30, 5, 200
+        local head = new("Frame",{Size=UDim2.new(1,0,0,32),BackgroundColor3=T.Card,BackgroundTransparency=0.1,BorderSizePixel=0,Parent=pw})
+        corner(head, 11); regRef(head, "BackgroundColor3", "Card")
+        local ttl = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,14,0,0),Size=UDim2.new(1,-50,1,0),Font=Enum.Font.GothamBold,Text="Potions",TextColor3=T.Text,TextSize=14,TextXAlignment=Enum.TextXAlignment.Left,Parent=head})
+        regRef(ttl, "TextColor3", "Text")
+        local flask = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(1,-34,0,0),Size=UDim2.new(0,24,1,0),Font=Enum.Font.GothamBold,Text="⚗",TextColor3=T.Accent,TextSize=16,Parent=head})
+        regRef(flask, "TextColor3", "Accent")
+        local rows = new("Frame",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,32+GP),Size=UDim2.new(1,0,1,-(32+GP)),Parent=pw})
+        local since, rowObjs, shownKey, shownLayout = {}, {}, "", 0
+
+        local function effects()
+            local out, alive = {}, {}
+            local now = os.clock()
+            local char = player.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local function add(id, name, icon, timed)
+                alive[id] = true
+                local t = "inf"
+                if timed then
+                    since[id] = since[id] or now
+                    local e = math.floor(now - since[id])
+                    t = string.format("%d:%02d", e // 60, e % 60)
+                end
+                out[#out+1] = {id=id, name=name, icon=icon, time=t}
+            end
+            if hum then
+                if hum.WalkSpeed > 17 then add("speed", "Speed "..ROMAN[math.clamp(math.floor(hum.WalkSpeed/16), 1, 10)], "⚡", false) end
+                local jp = hum.UseJumpPower and hum.JumpPower or hum.JumpHeight * 7
+                if jp > 55 then add("jump", "Jump Boost "..ROMAN[math.clamp(math.floor(jp/50), 1, 10)], "⬆", false) end
+                if hum.Health > 0 and hum.Health < hum.MaxHealth then add("regen", "Regeneration", "❤", false) end
+            end
+            if feat.fly then add("fly", "Flight", "🕊", true) end
+            if feat.noclip then add("noclip", "Phasing", "👻", true) end
+            if feat.infJump then add("infjump", "Leaping", "🦘", true) end
+            if feat.fullbright then add("fb", "Night Vision", "👁", true) end
+            if feat.glow then add("glow", "Glowing", "✨", true) end
+            if feat.neon then add("neon", "Neon Body", "💡", true) end
+            if feat.rainbowChar then add("rainbow", "Rainbow", "🌈", true) end
+            if feat.ghost then add("ghost", "Afterimage", "👤", true) end
+            if feat.playerTransparency and feat.playerTransparencyLevel >= 60 then add("invis", "Invisibility", "◌", true) end
+            if feat.freeCam then add("freecam", "Spectator", "🎥", true) end
+            for id in pairs(since) do if not alive[id] then since[id] = nil end end
+            return out
+        end
+        local function keyOf(list)
+            local k = {}
+            for _, e in ipairs(list) do k[#k+1] = e.id .. e.name end
+            return table.concat(k, "|")
+        end
+
+        local function mkPill(txt, bold, col, colKey)
+            local p = new("Frame",{BackgroundColor3=T.Card,BackgroundTransparency=1,BorderSizePixel=0,Size=UDim2.new(0,RH,0,RH),Parent=rows})
+            corner(p, 10); regRef(p, "BackgroundColor3", "Card")
+            local l = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.fromScale(1,1),Font=bold and Enum.Font.GothamBold or Enum.Font.GothamMedium,Text=txt,TextColor3=col,TextTransparency=1,TextSize=13,TextTruncate=Enum.TextTruncate.AtEnd,Parent=p})
+            regRef(l, "TextColor3", colKey)
+            return p, l
+        end
+        local function createRow(e)
+            local ro = {fresh=true, e=e}
+            ro.inBg = new("Frame",{BackgroundColor3=T.Card,BackgroundTransparency=1,BorderSizePixel=0,Size=UDim2.new(0,W,0,RH),Parent=rows})
+            corner(ro.inBg, 10); regRef(ro.inBg, "BackgroundColor3", "Card")
+            ro.iconBg, ro.iconLbl = mkPill(e.icon, true, T.Text, "Text"); ro.iconLbl.TextSize = 15
+            ro.nameBg, ro.nameLbl = mkPill(e.name, false, T.Text, "Text")
+            ro.timeBg, ro.timeLbl = mkPill(e.time, true, T.Accent, "Accent")
+            return ro
+        end
+        local function place(ro, idx, st, animate)
+            local animP = animate and not ro.fresh
+            local animT = animate or ro.fresh
+            local function mvP(o, props) if animP then tween(o, 0.36, props, Enum.EasingStyle.Quint, Enum.EasingDirection.Out) else for k, v in pairs(props) do o[k] = v end end end
+            local function mvT(o, props) if animT then tween(o, 0.3, props) else for k, v in pairs(props) do o[k] = v end end end
+            local y = (idx-1)*(RH+GP)
+            local ix, iw, nx, nw, tx, tw
+            if st == 1 then ix,iw,nx,nw,tx,tw = 0,RH,RH+GP,112,RH+GP+112+GP,48
+            elseif st == 2 then tx,tw,ix,iw,nx,nw = 0,48,48+GP,RH,48+GP+RH+GP,112
+            elseif st == 3 then nx,nw,ix,iw,tx,tw = 0,112,112+GP,RH,112+GP+RH+GP,48
+            else ix,iw,nx,nw,tx,tw = 6,26,34,112,150,44 end
+            local inline = (st == 4)
+            local pillT = inline and 1 or 0.1
+            mvP(ro.inBg, {Position=UDim2.new(0,0,0,y)})
+            mvT(ro.inBg, {BackgroundTransparency = inline and 0.1 or 1})
+            mvP(ro.iconBg, {Position=UDim2.new(0,ix,0,y), Size=UDim2.new(0,iw,0,RH)}); mvT(ro.iconBg, {BackgroundTransparency=pillT})
+            mvP(ro.nameBg, {Position=UDim2.new(0,nx,0,y), Size=UDim2.new(0,nw,0,RH)}); mvT(ro.nameBg, {BackgroundTransparency=pillT})
+            mvP(ro.timeBg, {Position=UDim2.new(0,tx,0,y), Size=UDim2.new(0,tw,0,RH)}); mvT(ro.timeBg, {BackgroundTransparency=pillT})
+            ro.iconLbl.Text = ro.e.icon
+            ro.nameLbl.Text = inline and ("•  " .. ro.e.name .. "  •") or ro.e.name
+            ro.timeLbl.Text = ro.e.time
+            if ro.fresh then
+                ro.fresh = false
+                for _, l in ipairs({ro.iconLbl, ro.nameLbl, ro.timeLbl}) do tween(l, 0.3, {TextTransparency=0}) end
+            end
+        end
+        local function fadeOut(ro)
+            for _, o in ipairs({ro.inBg, ro.iconBg, ro.nameBg, ro.timeBg}) do tween(o, 0.2, {BackgroundTransparency=1}) end
+            for _, l in ipairs({ro.iconLbl, ro.nameLbl, ro.timeLbl}) do tween(l, 0.2, {TextTransparency=1}) end
+            task.delay(0.3, function() for _, o in ipairs({ro.inBg, ro.iconBg, ro.nameBg, ro.timeBg}) do o:Destroy() end end)
+        end
+        local function sync(animate)
+            local real = effects()
+            shownKey = keyOf(real)
+            local list = real
+            if #list == 0 then list = {{id="none", name="No effects", icon="∅", time="—"}} end
+            local st = feat.potionsLayout or 1
+            if st < 1 or st > #STYLES then st = 1 end
+            shownLayout = st
+            local keep = {}
+            for i, e in ipairs(list) do
+                keep[e.id] = true
+                local ro = rowObjs[e.id]
+                if not ro then ro = createRow(e); rowObjs[e.id] = ro end
+                ro.e = e
+                place(ro, i, st, animate)
+            end
+            for id, ro in pairs(rowObjs) do
+                if not keep[id] then fadeOut(ro); rowObjs[id] = nil end
+            end
+            local sz = UDim2.new(0, W, 0, 32 + GP + #list*(RH+GP) - GP)
+            if animate then tween(pw, 0.3, {Size=sz}, Enum.EasingStyle.Quint, Enum.EasingDirection.Out) else pw.Size = sz end
+        end
+        Fn.potionsRebuild = function() sync(false) end
+        Fn.potionsCycle = function()
+            feat.potionsLayout = ((feat.potionsLayout or 1) % #STYLES) + 1
+            sync(true)
+            notify("Potions", "Layout: " .. STYLES[feat.potionsLayout])
+        end
+        task.spawn(function()
+            while true do
+                task.wait(0.3)
+                if pw.Visible then
+                    local list = effects()
+                    if keyOf(list) ~= shownKey or (feat.potionsLayout or 1) ~= shownLayout then sync(true)
+                    else for _, e in ipairs(list) do local ro = rowObjs[e.id]; if ro then ro.e = e; ro.timeLbl.Text = e.time end end end
+                end
+            end
+        end)
+        sync(false)
+    end
+
+    -- ══════════ WIDGET LAYOUTS (click any widget in edit mode to cycle) ══════════
+    -- Default -> Compact -> Large -> Bare (no background, text only). Everything morphs smoothly.
+    -- Keybinds (List / Pills) and Potions (4 pill layouts) have their own special layouts.
+    do
+        local LAYOUTS = {"Default", "Compact", "Large", "Bare"}
+        local SCALES = {1, 0.82, 1.22, 1}
+        local RADII = {RM, 6, 14, 12}
+        local LABELS = {statusBar="Status Bar", fps="FPS", coords="Coordinates", ping="Ping", watermark="Watermark", keybinds="Keybinds", musicHud="Music HUD", speed="Speed", lyrics="Lyrics Bar", keystrokes="Keystrokes", mousestrokes="Mousestrokes"}
+        local txtOrig = setmetatable({}, {__mode = "k"})
+        for name in pairs(overlays) do if name ~= "potions" then feat["layout_" .. name] = 1 end end
+        Fn.LAYOUT_NAMES = LAYOUTS
+        Fn.applyLayout = function(name, animate)
+            local f = overlays[name]
+            if not f or name == "potions" then return end
+            if name == "keybinds" then if Fn.kbApply then Fn.kbApply(animate) end return end
+            local idx = feat["layout_" .. name] or 1
+            if idx < 1 or idx > #LAYOUTS then idx = 1 end
+            local function mv(o, props, dur)
+                if animate then TS:Create(o, TweenInfo.new(sdur(dur or 0.3), Enum.EasingStyle.Quint, Enum.EasingDirection.Out), props):Play()
+                else for k, v in pairs(props) do o[k] = v end end
+            end
+            local us = f:FindFirstChildOfClass("UIScale") or new("UIScale", {Name = "OwoLayoutScale", Parent = f})
+            mv(us, {Scale = SCALES[idx]})
+            local rad = RADII[idx]
+            local c = f:FindFirstChildOfClass("UICorner"); if c then mv(c, {CornerRadius = UDim.new(0, rad)}) end
+            for _, n in ipairs({"OwoGlassFrost", "OwoGlassGloss", "OwoGlassRim"}) do
+                local l = f:FindFirstChild(n)
+                local lc = l and l:FindFirstChildOfClass("UICorner")
+                if lc then lc.CornerRadius = UDim.new(0, rad) end
+            end
+            local bare = (idx == 4)
+            f:SetAttribute("LBare", bare)
+            local ln = f:FindFirstChild("OwoLine"); if ln then mv(ln, {Transparency = bare and 1 or 0.6}, 0.25) end
+            mv(f, {BackgroundTransparency = bare and 1 or TR.Overlay}, 0.25)
+            for _, d in ipairs(f:GetDescendants()) do
+                if d:IsA("TextLabel") or d:IsA("TextButton") then
+                    if bare then
+                        if txtOrig[d] == nil then txtOrig[d] = {d.TextStrokeTransparency, d.TextStrokeColor3} end
+                        d.TextStrokeColor3 = Color3.new(0, 0, 0)
+                        mv(d, {TextStrokeTransparency = 0.45}, 0.25)
+                    elseif txtOrig[d] then
+                        d.TextStrokeColor3 = txtOrig[d][2]
+                        mv(d, {TextStrokeTransparency = txtOrig[d][1]}, 0.25)
+                        txtOrig[d] = nil
+                    end
+                end
+            end
+            if Glass.refreshAll then Glass.refreshAll() end
+        end
+        Fn.applyAllLayouts = function()
+            for name in pairs(overlays) do
+                if name ~= "potions" then Fn.applyLayout(name, false) end
+            end
+            if Fn.potionsRebuild then Fn.potionsRebuild() end
+        end
+        Fn.cycleLayout = function(name)
+            if name == "potions" then if Fn.potionsCycle then Fn.potionsCycle() end return end
+            if name == "keybinds" then if Fn.kbCycle then Fn.kbCycle() end return end
+            if not overlays[name] then return end
+            feat["layout_" .. name] = ((feat["layout_" .. name] or 1) % #LAYOUTS) + 1
+            Fn.applyLayout(name, true)
+            notify(LABELS[name] or name, "Layout: " .. LAYOUTS[feat["layout_" .. name]])
+        end
+        Fn.resetLayout = function(name)
+            if name == "potions" then feat.potionsLayout = 1; if Fn.potionsRebuild then Fn.potionsRebuild() end return end
+            feat["layout_" .. name] = 1; Fn.applyLayout(name, true)
         end
     end
 
@@ -2362,7 +2485,8 @@ do
     end
     local chatGui = new("ScreenGui",{Name="OwoFriendChat",ResetOnSpawn=false,IgnoreGuiInset=true,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,Parent=pg,DisplayOrder=5})
     local win = new("Frame",{Name="ChatWin",Size=UDim2.new(0,380,0,420),Position=UDim2.new(1,-400,0.5,-210),BackgroundColor3=T.Panel,BackgroundTransparency=TR.Window,BorderSizePixel=0,Visible=false,Active=true,Parent=chatGui})
-    corner(win,RB); stroke(win,1,0.5,T.Line); regRef(win,"BackgroundColor3","Panel"); addSheen(win)
+    corner(win,RB); local wst = stroke(win,1,0.5,T.Line,true); regRef(wst,"Color","Line"); regRef(win,"BackgroundColor3","Panel"); addSheen(win)
+    Glass.G.decorate(win)
     Friends.panel = win
     local header = new("Frame",{Size=UDim2.new(1,0,0,44),BackgroundTransparency=1,Parent=win})
     local title = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,16,0,0),Size=UDim2.new(1,-80,1,0),Font=Enum.Font.GothamBold,Text="Chat",TextColor3=T.Text,TextSize=14,TextXAlignment=Enum.TextXAlignment.Left,Parent=header}); regRef(title,"TextColor3","Text")
@@ -2547,6 +2671,70 @@ do
         end
     end)
     player.CharacterAdded:Connect(function() task.wait(1); if feat.ambient then Wx.ambient() end end)
+end
+
+-- ══════════════════════════════════════════════════════════════
+-- RAIN RIPPLES  (drops hit the ground / water and send out rings)
+-- ══════════════════════════════════════════════════════════════
+do
+    local folder = new("Folder", {Name="OwoRipples", Parent=workspace})
+    local POOL = 90
+    local pool, active = {}, {}
+    local rp = RaycastParams.new(); rp.FilterType = Enum.RaycastFilterType.Exclude; rp.IgnoreWater = false
+    local function mk()
+        local p = new("Part", {Name="Ripple", Anchored=true, CanCollide=false, CanQuery=false, CanTouch=false, CastShadow=false, Transparency=1, Size=Vector3.new(1, 0.05, 1)})
+        local sg = new("SurfaceGui", {Face=Enum.NormalId.Top, SizingMode=Enum.SurfaceGuiSizingMode.FixedSize, CanvasSize=Vector2.new(160, 160), LightInfluence=0, AlwaysOnTop=false, Brightness=1.5, Parent=p})
+        local st = {}
+        for i, sc in ipairs({1, 0.6}) do
+            local fr = new("Frame", {AnchorPoint=Vector2.new(0.5, 0.5), Position=UDim2.fromScale(0.5, 0.5), Size=UDim2.fromScale(sc * 0.96, sc * 0.96), BackgroundTransparency=1, BorderSizePixel=0, Parent=sg})
+            new("UICorner", {CornerRadius=UDim.new(0.5, 0), Parent=fr})
+            st[i] = new("UIStroke", {Thickness=6, Color=Color3.new(1, 1, 1), Transparency=1, Parent=fr})
+        end
+        return {part=p, st=st, age=0, life=1, size=1}
+    end
+    local acc = 0
+    RS.RenderStepped:Connect(function(dt)
+        for i = #active, 1, -1 do
+            local r = active[i]
+            r.age += dt
+            local k = r.age / r.life
+            if k >= 1 then
+                r.part.Parent = nil
+                pool[#pool+1] = r
+                table.remove(active, i)
+            else
+                local e = 1 - (1 - k) * (1 - k)
+                local s = r.size * (0.2 + 0.8 * e)
+                r.part.Size = Vector3.new(s, 0.05, s)
+                local tr = 0.15 + 0.85 * k ^ 1.3
+                r.st[1].Transparency = tr
+                r.st[2].Transparency = math.min(1, tr + 0.25)
+            end
+        end
+        if not feat.rainRipples then acc = 0; return end
+        acc = math.min(acc + dt * feat.rippleRate, 6)
+        local cam = workspace.CurrentCamera
+        while acc >= 1 do
+            acc -= 1
+            if #active >= POOL then break end
+            local base = cam.CFrame.Position
+            local ang, rad = math.random() * math.pi * 2, math.sqrt(math.random()) * feat.rippleRadius
+            local origin = Vector3.new(base.X + math.cos(ang) * rad, base.Y + 40, base.Z + math.sin(ang) * rad)
+            rp.FilterDescendantsInstances = {player.Character, folder}
+            local hit = workspace:Raycast(origin, Vector3.new(0, -140, 0), rp)
+            if hit and hit.Normal.Y > 0.7 then
+                local r = table.remove(pool) or mk()
+                r.age, r.life = 0, 0.8 + math.random() * 0.7
+                r.size = feat.rippleSize * (0.7 + math.random() * 0.8)
+                local col = Color3.new(1, 1, 1):Lerp(EFFECT_COLOR, 0.25)
+                r.st[1].Color = col; r.st[2].Color = col
+                r.part.Size = Vector3.new(r.size * 0.2, 0.05, r.size * 0.2)
+                r.part.CFrame = CFrame.new(hit.Position + Vector3.new(0, 0.04, 0))
+                r.part.Parent = folder
+                active[#active+1] = r
+            end
+        end
+    end)
 end
 
 -- ══════════════════════════════════════════════════════════════
@@ -2859,53 +3047,56 @@ do
 end
 
 -- ══════════════════════════════════════════════════════════════
--- MAIN WINDOW
+-- MAIN WINDOW  (hover sidebar: icons only -> icons + names)
 -- ══════════════════════════════════════════════════════════════
 local mkListPage
 do
     local gui = new("ScreenGui",{Name="OwoClient",ResetOnSpawn=false,IgnoreGuiInset=true,ZIndexBehavior=Enum.ZIndexBehavior.Sibling,Parent=pg})
     UI.gui = gui
-    local SB_W, GAP = 72, 12
-    local MAIN_W, MAIN_H = 620, 440
-    local ROOT_W = SB_W + GAP + MAIN_W
-    local HEAD_H = 70
-    UI.MIN_W, UI.MIN_H, UI.ROOT_W, UI.MAIN_H = SB_W + GAP + 320, 260, ROOT_W, MAIN_H
-    local win = new("Frame",{Name="Root", Size=UDim2.new(0, ROOT_W, 0, MAIN_H), Position=UDim2.new(0.5, 0, 0.5, 0), AnchorPoint=Vector2.new(0.5, 0.5), BackgroundTransparency=1, Visible=false, Active=true, Parent=gui})
+    local SB_C, SB_E = 62, 176
+    local ROOT_W, ROOT_H = 780, 480
+    local TOP_H = 86
+    UI.MIN_W, UI.MIN_H, UI.ROOT_W, UI.MAIN_H = 580, 330, ROOT_W, ROOT_H
+    UI.sbPinned = false
+
+    local win = new("Frame",{Name="Root", Size=UDim2.new(0,ROOT_W,0,ROOT_H), Position=UDim2.new(0.5,0,0.5,0), AnchorPoint=Vector2.new(0.5,0.5), BackgroundTransparency=1, Visible=false, Active=true, Parent=gui})
     UI.win = win
     local uiScale = new("UIScale", {Scale = 1, Parent = win})
     local canvas = new("CanvasGroup", {Name="Canvas", Size=UDim2.new(1,0,1,0), BackgroundTransparency=1, GroupTransparency=1, Parent=win})
     UI.canvas = canvas
-    local sidebar = new("Frame",{Name="Sidebar",Size=UDim2.new(0,SB_W,1,0),BackgroundColor3=T.Sidebar,BackgroundTransparency=TR.Sidebar,BorderSizePixel=0,ClipsDescendants=true,Parent=canvas})
-    corner(sidebar, 18); stroke(sidebar, 1, 0.5, T.Line); regRef(sidebar, "BackgroundColor3", "Sidebar"); addSheen(sidebar)
-    UI.sidebar = sidebar
-    local mainPanel = new("Frame",{Name="Main",Size=UDim2.new(1,-(SB_W+GAP),1,0),Position=UDim2.new(0,SB_W+GAP,0,0),BackgroundColor3=T.Bg,BackgroundTransparency=TR.Window,BorderSizePixel=0,ClipsDescendants=true,Parent=canvas})
-    corner(mainPanel, 18); stroke(mainPanel, 1, 0.5, T.Line); regRef(mainPanel, "BackgroundColor3", "Bg"); addSheen(mainPanel)
-    UI.mainPanel = mainPanel
-    local function mkBg(parent, name)
-        return new("ImageLabel", {Name = name, Size = UDim2.new(1, 0, 1, 0), BackgroundTransparency = 1, Image = "", ImageTransparency = 0.3, ScaleType = Enum.ScaleType.Crop, ZIndex = 0, Visible = false, Parent = parent})
-    end
-    UI.bgImage = mkBg(mainPanel, "OwoUIBackground")
-    UI.bgImageSidebar = mkBg(sidebar, "OwoUIBackgroundSidebar")
+
+    local panel = new("Frame",{Name="Main",Size=UDim2.new(1,0,1,0),BackgroundColor3=T.Bg,BackgroundTransparency=TR.Window,BorderSizePixel=0,ClipsDescendants=true,Parent=canvas})
+    corner(panel, 16)
+    local pst = stroke(panel, 1, 0.45, T.Line, true); regRef(pst, "Color", "Line")
+    regRef(panel, "BackgroundColor3", "Bg"); addSheen(panel)
+    Glass.G.decorate(panel)
+    UI.mainPanel = panel
+
+    UI.bgImage = new("ImageLabel", {Name="OwoUIBackground", Size=UDim2.new(1,0,1,0), BackgroundTransparency=1, Image="", ImageTransparency=0.3, ScaleType=Enum.ScaleType.Crop, ZIndex=0, Visible=false, Parent=panel})
+    corner(UI.bgImage, 16)
     Fn.applyUIBackground = function()
         local show = feat.uiBackground and feat.uiBackgroundId ~= ""
-        local url = (feat.uiBackgroundId ~= "") and ("rbxthumb://type=Asset&id="..feat.uiBackgroundId.."&w=420&h=420") or ""
-        for _, img in ipairs({UI.bgImage, UI.bgImageSidebar}) do
-            if img then
-                img.Visible = show
-                img.ImageTransparency = feat.uiBackgroundTransparency
-                if url ~= "" then img.Image = url end
-            end
-        end
+        UI.bgImage.Visible = show
+        UI.bgImage.ImageTransparency = feat.uiBackgroundTransparency
+        if feat.uiBackgroundId ~= "" then UI.bgImage.Image = "rbxthumb://type=Asset&id="..feat.uiBackgroundId.."&w=420&h=420" end
     end
-    local header = new("Frame",{Name="Header",Size=UDim2.new(1,0,0,HEAD_H),BackgroundTransparency=1,Parent=mainPanel})
-    local ht = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,22,0,14),Size=UDim2.new(1,-140,0,22),Font=Enum.Font.GothamBold,Text=">.<",TextColor3=T.Text,TextSize=18,TextXAlignment=Enum.TextXAlignment.Left,Parent=header})
-    local hs = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,22,0,38),Size=UDim2.new(1,-140,0,16),Font=Enum.Font.Gotham,Text="Welcome, "..(player.DisplayName or player.Name),TextColor3=T.Dim,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,Parent=header})
-    regRef(ht,"TextColor3","Text"); regRef(hs,"TextColor3","Dim")
-    local clockLbl = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(1,-110,0,22),Size=UDim2.new(0,90,0,20),Font=Enum.Font.GothamMedium,Text="00:00",TextColor3=T.Dim,TextSize=12,TextXAlignment=Enum.TextXAlignment.Right,Parent=header})
-    regRef(clockLbl,"TextColor3","Dim")
-    task.spawn(function() while header.Parent do task.wait(1); clockLbl.Text = os.date("%I:%M %p"):gsub("^0","") end end)
-    drag(win, header)
-    UI.contentArea = new("Frame",{Name="Content",Size=UDim2.new(1,-32,1,-HEAD_H-16),Position=UDim2.new(0,16,0,HEAD_H),BackgroundTransparency=1,Parent=mainPanel})
+
+    -- ───── content side ─────
+    local holder = new("Frame",{Name="Holder",Size=UDim2.new(1,-SB_C,1,0),Position=UDim2.new(0,SB_C,0,0),BackgroundTransparency=1,Parent=panel})
+    local topBar = new("Frame",{Name="TopBar",Size=UDim2.new(1,0,0,TOP_H),BackgroundTransparency=1,Parent=holder})
+    local searchWrap = new("Frame",{Size=UDim2.new(0,210,0,30),Position=UDim2.new(0,18,0,14),BackgroundColor3=T.Card,BackgroundTransparency=0.3,BorderSizePixel=0,Parent=topBar})
+    corner(searchWrap, 9); regRef(searchWrap, "BackgroundColor3", "Card")
+    local sws = stroke(searchWrap, 1, 0.6, T.Line, true); regRef(sws, "Color", "Line")
+    local mag = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,8,0,0),Size=UDim2.new(0,20,1,0),Font=Enum.Font.GothamBold,Text="⌕",TextColor3=T.Dim,TextSize=15,Parent=searchWrap}); regRef(mag,"TextColor3","Dim")
+    local searchBox = new("TextBox",{Size=UDim2.new(1,-36,1,0),Position=UDim2.new(0,30,0,0),BackgroundTransparency=1,Font=Enum.Font.GothamMedium,Text="",PlaceholderText="Search...",TextColor3=T.Text,PlaceholderColor3=T.Muted,TextSize=12,ClearTextOnFocus=false,TextXAlignment=Enum.TextXAlignment.Left,Parent=searchWrap})
+    regRef(searchBox,"TextColor3","Text")
+    local titleLbl = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,18,0,48),Size=UDim2.new(1,-150,0,32),Font=Enum.Font.GothamBold,Text="Home",TextColor3=T.Text,TextSize=22,TextXAlignment=Enum.TextXAlignment.Left,Parent=topBar}); regRef(titleLbl,"TextColor3","Text")
+    local clockLbl = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(1,-112,0,18),Size=UDim2.new(0,94,0,20),Font=Enum.Font.GothamMedium,Text="00:00",TextColor3=T.Dim,TextSize=12,TextXAlignment=Enum.TextXAlignment.Right,Parent=topBar}); regRef(clockLbl,"TextColor3","Dim")
+    task.spawn(function() while topBar.Parent do task.wait(1); clockLbl.Text = os.date("%I:%M %p"):gsub("^0","") end end)
+    drag(win, topBar)
+    UI.contentArea = new("Frame",{Name="Content",Size=UDim2.new(1,-36,1,-TOP_H-12),Position=UDim2.new(0,18,0,TOP_H),BackgroundTransparency=1,Parent=holder})
+
+    -- resize grip
     local rh = new("TextButton",{Size=UDim2.new(0,20,0,20),Position=UDim2.new(1,-20,1,-20),BackgroundTransparency=1,Text="",AutoButtonColor=false,ZIndex=60,Parent=win})
     local grip = new("Frame",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,ZIndex=61,Parent=rh})
     for i = 1, 2 do
@@ -2914,7 +3105,7 @@ do
     local rszA, rszS, rszO = false, nil, nil
     rh.InputBegan:Connect(function(i)
         if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-            rszA = true; rszS = i.Position; rszO = win.AbsoluteSize; Fn.dragState(win, true)
+            rszA = true; rszS = i.Position; rszO = win.AbsoluteSize
         end
     end)
     UIS.InputChanged:Connect(function(i)
@@ -2923,8 +3114,9 @@ do
         end
     end)
     UIS.InputEnded:Connect(function(i)
-        if rszA and (i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch) then rszA = false; Fn.dragState(win, false) end
+        if rszA and (i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch) then rszA = false end
     end)
+
     Fn.openMenu = function()
         if UI.isOpen then return end
         playUiSoundLayered("menuOpen")
@@ -2932,7 +3124,6 @@ do
         canvas.GroupTransparency = 1; uiScale.Scale = 0.92; win.Visible = true
         TS:Create(canvas, TweenInfo.new(sdur(0.26), Enum.EasingStyle.Back, Enum.EasingDirection.Out), {GroupTransparency = 0}):Play()
         TS:Create(uiScale, TweenInfo.new(sdur(0.32), Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Scale = 1}):Play()
-        Fn.syncGlass()
     end
     Fn.closeMenu = function()
         if not UI.isOpen then return end
@@ -2940,67 +3131,131 @@ do
         UI.isOpen = false
         TS:Create(canvas, TweenInfo.new(sdur(0.16), Enum.EasingStyle.Quad, Enum.EasingDirection.In), {GroupTransparency = 1}):Play()
         TS:Create(uiScale, TweenInfo.new(sdur(0.18), Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Scale = 0.92}):Play()
-        task.delay(sdur(0.18), function() if not UI.isOpen then win.Visible = false; Fn.syncGlass() end end)
+        task.delay(sdur(0.18), function() if not UI.isOpen then win.Visible = false end end)
     end
     Fn.toggleMenu = function() if UI.isOpen then Fn.closeMenu() else Fn.openMenu() end end
+
+    -- ───── sidebar (drawer: hover to expand) ─────
+    local sidebar = new("Frame",{Name="Sidebar",Size=UDim2.new(0,SB_C,1,0),BackgroundColor3=T.Panel,BackgroundTransparency=1,BorderSizePixel=0,ClipsDescendants=true,ZIndex=5,Parent=panel})
+    corner(sidebar, 16); regRef(sidebar, "BackgroundColor3", "Panel")
+    UI.sidebar = sidebar
+    local divider = new("Frame",{Size=UDim2.new(0,1,1,-28),Position=UDim2.new(1,-1,0,14),BackgroundColor3=T.Line,BackgroundTransparency=0.35,BorderSizePixel=0,ZIndex=6,Parent=sidebar}); regRef(divider,"BackgroundColor3","Line")
+    local fadeTxt, fadeLine = {}, {}
+    local function ftxt(l) fadeTxt[#fadeTxt+1] = l; l.TextTransparency = 1; return l end
+
+    local logo = new("TextButton",{Size=UDim2.new(1,0,0,60),BackgroundTransparency=1,Text="",AutoButtonColor=false,ZIndex=6,Parent=sidebar})
+    local logoMark = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(0,SB_C,1,0),Font=Enum.Font.GothamBold,Text=">.<",TextColor3=T.Text,TextSize=19,ZIndex=7,Parent=logo}); regRef(logoMark,"TextColor3","Text")
+    ftxt(new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,SB_C-8,0,13),Size=UDim2.new(1,-SB_C,0,18),Font=Enum.Font.GothamBold,Text="Client",TextColor3=T.Text,TextSize=15,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=7,Parent=logo}))
+    ftxt(new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,SB_C-8,0,31),Size=UDim2.new(1,-SB_C,0,14),Font=Enum.Font.Gotham,Text="Version: Beta",TextColor3=T.Muted,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=7,Parent=logo}))
+    logo.MouseButton1Click:Connect(function() UI.sbPinned = not UI.sbPinned end)
+
+    local tabList = new("ScrollingFrame", {Position=UDim2.new(0,0,0,62), Size=UDim2.new(1,0,1,-62-58), BackgroundTransparency=1, BorderSizePixel=0, ScrollBarThickness=0, CanvasSize=UDim2.new(0,0,0,0), AutomaticCanvasSize=Enum.AutomaticSize.Y, ScrollingDirection=Enum.ScrollingDirection.Y, ZIndex=6, Parent=sidebar})
+    new("UIListLayout",{Padding=UDim.new(0,3),SortOrder=Enum.SortOrder.LayoutOrder,HorizontalAlignment=Enum.HorizontalAlignment.Center,Parent=tabList})
+
     local Pages, Tabs = {}, {}
     local cur = nil
-    local tabList = new("ScrollingFrame", {Size=UDim2.new(1,0,1,-80), Position=UDim2.new(0,0,0,14), BackgroundTransparency=1, BorderSizePixel=0, ScrollBarThickness=0, CanvasSize=UDim2.new(0,0,0,0), AutomaticCanvasSize=Enum.AutomaticSize.Y, ScrollingDirection=Enum.ScrollingDirection.Y, Parent=sidebar})
-    new("UIListLayout",{Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder,HorizontalAlignment=Enum.HorizontalAlignment.Center,Parent=tabList})
-    local tabSpecs = {
-        {name="home", label="Home", order=1}, {name="movement", label="Move", order=2},
-        {name="visuals", label="Visual", order=3}, {name="overlays", label="Overlay", order=4},
-        {name="themes", label="Theme", order=5}, {name="music", label="Music", order=6},
-        {name="friends", label="Friend", order=7}, {name="saves", label="Saves", order=8},
-        {name="more", label="More", order=9},
-    }
+    local TITLES = {home="Home", movement="Movement", visuals="Visuals", overlays="Overlays", music="Music", friends="Friends", themes="Themes", saves="Configs", more="More", misc="Misc"}
+    local lo = 0
+    local function section(txt)
+        lo += 1
+        local f = new("Frame",{Size=UDim2.new(1,0,0,26),BackgroundTransparency=1,LayoutOrder=lo,ZIndex=6,Parent=tabList})
+        local l = ftxt(new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,16,0,0),Size=UDim2.new(1,-20,1,0),Font=Enum.Font.GothamBold,Text=txt,TextColor3=T.Muted,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=7,Parent=f}))
+        regRef(l, "TextColor3", "Muted")
+        local line = new("Frame",{Size=UDim2.new(1,-28,0,1),Position=UDim2.new(0,14,0.5,0),BackgroundColor3=T.Line,BackgroundTransparency=0.45,BorderSizePixel=0,ZIndex=7,Parent=f}); regRef(line,"BackgroundColor3","Line")
+        fadeLine[#fadeLine+1] = line
+    end
     local function setTabVisual(t, active)
-        tween(t.btn, 0.15, {BackgroundColor3 = active and T.Hover or T.Sidebar, BackgroundTransparency = active and (TR.Card - 0.05) or 1})
+        tween(t.btn, 0.15, {BackgroundTransparency = active and 0.55 or 1})
+        t.icon.TextColor3 = active and T.Accent or T.Dim
         t.label.TextColor3 = active and T.Text or T.Dim
     end
+    local function tab(name, label, icon)
+        lo += 1
+        local btn = new("TextButton",{Size=UDim2.new(1,-12,0,36),BackgroundColor3=T.Hover,BackgroundTransparency=1,Text="",BorderSizePixel=0,AutoButtonColor=false,LayoutOrder=lo,ZIndex=6,Parent=tabList})
+        corner(btn, 10); regRef(btn, "BackgroundColor3", "Hover")
+        local ic = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,6,0,0),Size=UDim2.new(0,38,1,0),Font=Enum.Font.GothamBold,Text=icon,TextColor3=T.Dim,TextSize=17,ZIndex=7,Parent=btn})
+        local nm = ftxt(new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,48,0,0),Size=UDim2.new(1,-52,1,0),Font=Enum.Font.GothamMedium,Text=label,TextColor3=T.Dim,TextSize=13,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=7,Parent=btn}))
+        btn.MouseEnter:Connect(function() if cur ~= name then tween(btn,0.12,{BackgroundTransparency=0.75}); playUiSound("hover") end end)
+        btn.MouseLeave:Connect(function() if cur ~= name then tween(btn,0.12,{BackgroundTransparency=1}) end end)
+        btn.MouseButton1Click:Connect(function() Fn.selTab(name) end)
+        Tabs[name] = {btn=btn, icon=ic, label=nm}
+    end
+    section("FEATURES")
+    tab("home","Home","⌂"); tab("movement","Movement","↗"); tab("visuals","Visuals","✦"); tab("overlays","Overlays","▦"); tab("music","Music","♪")
+    section("OTHERS")
+    tab("friends","Friends","☻"); tab("themes","Themes","◐"); tab("saves","Configs","☰"); tab("more","More","⋯"); tab("misc","Misc","⚙")
+
+    local prof = new("Frame",{Size=UDim2.new(1,0,0,56),Position=UDim2.new(0,0,1,-56),BackgroundTransparency=1,ZIndex=6,Parent=sidebar})
+    local pav = new("Frame",{Size=UDim2.new(0,32,0,32),Position=UDim2.new(0,15,0.5,-16),BackgroundColor3=T.Off,BorderSizePixel=0,ZIndex=7,Parent=prof}); corner(pav,16)
+    local pimg = new("ImageLabel",{Size=UDim2.fromScale(1,1),BackgroundTransparency=1,ZIndex=8,Parent=pav}); corner(pimg,16)
+    task.spawn(function()
+        local ok, thumb = pcall(function() return Players:GetUserThumbnailAsync(player.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size100x100) end)
+        if ok and thumb then pimg.Image = thumb end
+    end)
+    ftxt(new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,56,0,10),Size=UDim2.new(1,-62,0,16),Font=Enum.Font.GothamBold,Text=player.DisplayName or player.Name,TextColor3=T.Text,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=7,Parent=prof}))
+    ftxt(new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,56,0,27),Size=UDim2.new(1,-62,0,14),Font=Enum.Font.Gotham,Text="@"..player.Name,TextColor3=T.Muted,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=7,Parent=prof}))
+
+    -- hover expand driver (polls the mouse so child buttons can't cause flicker)
+    do
+        local expandT, lastA = 0, -1
+        RS.RenderStepped:Connect(function(dt)
+            if not win.Visible then return end
+            local inside = false
+            if UI.isOpen then
+                local m = UIS:GetMouseLocation()
+                local p, s = panel.AbsolutePosition, panel.AbsoluteSize
+                local w = sidebar.AbsoluteSize.X
+                inside = m.X >= p.X and m.X <= p.X + w + 6 and m.Y >= p.Y and m.Y <= p.Y + s.Y
+            end
+            local target = (inside or UI.sbPinned) and 1 or 0
+            expandT = slerp(expandT, target, dt, 16)
+            if math.abs(expandT - target) < 0.003 then expandT = target end
+            if expandT ~= lastA then
+                lastA = expandT
+                local a = expandT
+                sidebar.Size = UDim2.new(0, SB_C + (SB_E - SB_C) * a, 1, 0)
+                sidebar.BackgroundTransparency = 1 - 0.94 * a
+                local tt = 1 - math.clamp((a - 0.3) / 0.7, 0, 1)
+                for _, l in ipairs(fadeTxt) do l.TextTransparency = tt end
+                for _, f in ipairs(fadeLine) do f.BackgroundTransparency = 0.45 + 0.55 * a end
+            end
+        end)
+    end
+
+    -- search (filters the cards of the visible page)
+    local function applySearch()
+        local q = (searchBox.Text:lower():gsub("^%s+", ""):gsub("%s+$", ""))
+        local p = Pages[cur]
+        if not p or not p:IsA("ScrollingFrame") then return end
+        for _, c in ipairs(p:GetChildren()) do
+            if c:IsA("GuiObject") then
+                local l = c:GetAttribute("OwoLbl")
+                if q == "" then c.Visible = true
+                elseif l then c.Visible = (l:find(q, 1, true) ~= nil)
+                else c.Visible = false end
+            end
+        end
+    end
+    searchBox:GetPropertyChangedSignal("Text"):Connect(applySearch)
+
     Fn.selTab = function(name)
         if cur == name then return end
         playUiSound("tabSwitch")
         cur = name
+        if searchBox.Text ~= "" then searchBox.Text = "" end
         for tn, p in pairs(Pages) do p.Visible = (tn == name) end
         for tn, t in pairs(Tabs) do setTabVisual(t, tn == name) end
-        -- Staggered fade-in for page content
-        local page = Pages[name]
-        if page then
-            local children = page:GetChildren()
-            for i, child in ipairs(children) do
-                if child:IsA("GuiObject") and child.Name ~= "UIListLayout" and child.Name ~= "UIPadding" then
-                    child.BackgroundTransparency = 1
-                    if child:IsA("TextLabel") or child:IsA("TextButton") then child.TextTransparency = 1 end
-                    task.delay(i * 0.015 / Smooth.level, function()
-                        tween(child, 0.25, {BackgroundTransparency = TR.Card})
-                        if child:IsA("TextLabel") or child:IsA("TextButton") then
-                            pcall(function() TS:Create(child, TweenInfo.new(sdur(0.25)), {TextTransparency = 0}):Play() end)
-                        end
-                    end)
-                end
-            end
+        titleLbl.Text = TITLES[name] or name
+        local pgf = Pages[name]
+        if pgf then
+            pgf.Position = UDim2.new(0, 0, 0, 10)
+            TS:Create(pgf, TweenInfo.new(sdur(0.22), Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Position = UDim2.new(0, 0, 0, 0)}):Play()
         end
     end
-    for _, spec in ipairs(tabSpecs) do
-        local btn = new("TextButton",{Size=UDim2.new(1,-16,0,36),BackgroundColor3=T.Sidebar,BackgroundTransparency=1,Text="",BorderSizePixel=0,AutoButtonColor=false,LayoutOrder=spec.order,Parent=tabList})
-        corner(btn, 10)
-        local label = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(1,0,1,0),Font=Enum.Font.GothamMedium,Text=spec.label,TextColor3=T.Dim,TextSize=11,TextXAlignment=Enum.TextXAlignment.Center,Parent=btn})
-        btn.MouseEnter:Connect(function() if cur ~= spec.name then tween(btn,0.12,{BackgroundColor3=T.Hover, BackgroundTransparency=0.4}); playUiSound("hover") end end)
-        btn.MouseLeave:Connect(function() if cur ~= spec.name then tween(btn,0.12,{BackgroundTransparency=1}) end end)
-        btn.MouseButton1Click:Connect(function() Fn.selTab(spec.name) end)
-        Tabs[spec.name] = {btn=btn, label=label}
-    end
-    local miscBtn = new("TextButton",{Size=UDim2.new(1,-16,0,36),Position=UDim2.new(0,8,1,-48),BackgroundColor3=T.Sidebar,BackgroundTransparency=1,Text="",BorderSizePixel=0,AutoButtonColor=false,Parent=sidebar})
-    corner(miscBtn, 10)
-    local miscLabel = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(1,0,1,0),Font=Enum.Font.GothamMedium,Text="Misc",TextColor3=T.Dim,TextSize=11,Parent=miscBtn})
-    miscBtn.MouseEnter:Connect(function() if cur ~= "misc" then tween(miscBtn,0.12,{BackgroundColor3=T.Hover, BackgroundTransparency=0.4}); playUiSound("hover") end end)
-    miscBtn.MouseLeave:Connect(function() if cur ~= "misc" then tween(miscBtn,0.12,{BackgroundTransparency=1}) end end)
-    miscBtn.MouseButton1Click:Connect(function() Fn.selTab("misc") end)
-    Tabs.misc = {btn=miscBtn, label=miscLabel}
+
     mkListPage = function(name)
         local p = new("ScrollingFrame",{Size=UDim2.new(1,0,1,0), BackgroundTransparency=1, BorderSizePixel=0, ScrollBarThickness=3, ScrollBarImageColor3=T.Muted, ScrollBarImageTransparency=0.5, CanvasSize=UDim2.new(0,0,0,0), AutomaticCanvasSize=Enum.AutomaticSize.Y, Visible=false, Parent=UI.contentArea})
-        new("UIListLayout",{Padding=UDim.new(0,6), Parent=p})
+        new("UIListLayout",{Padding=UDim.new(0,8), FillDirection=Enum.FillDirection.Horizontal, Wraps=true, SortOrder=Enum.SortOrder.LayoutOrder, Parent=p})
         Pages[name] = p
         return p
     end
@@ -3008,23 +3263,28 @@ do
 end
 
 -- ══════════════════════════════════════════════════════════════
--- WIDGET BUILDERS
+-- WIDGET BUILDERS  (toggles / buttons / sliders are 2-column cards)
 -- ══════════════════════════════════════════════════════════════
+local ROW_H = 54
 local function hdr(p, t)
-    local l = new("TextLabel",{Size=UDim2.new(1,-4,0,26),BackgroundTransparency=1,Font=Enum.Font.GothamBold,Text=t:upper(),TextColor3=T.Dim,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,Parent=p})
-    local bar = new("Frame",{Size=UDim2.new(0,2,0,12),Position=UDim2.new(0,-6,0.5,-6),BackgroundColor3=T.Accent,BorderSizePixel=0,Parent=l})
+    local l = new("TextLabel",{Size=UDim2.new(1,-4,0,24),BackgroundTransparency=1,Font=Enum.Font.GothamBold,Text=t:upper(),TextColor3=T.Dim,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,Parent=p})
+    new("UIPadding",{PaddingLeft=UDim.new(0,10),Parent=l})
+    l:SetAttribute("OwoHdr", true)
+    regRef(l, "TextColor3", "Dim")
+    local bar = new("Frame",{Size=UDim2.new(0,2,0,12),Position=UDim2.new(0,0,0.5,-6),BackgroundColor3=T.Accent,BorderSizePixel=0,Parent=l})
     corner(bar, 1); gradient(bar, T.Accent, T.Accent2, 90)
     return l
 end
 
 local function mkT(p, label, def, cb, kbName)
     local st = def or false
-    local row = new("TextButton",{Size=UDim2.new(1,-4,0,48),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,AutoButtonColor=false,Text="",Parent=p})
+    local row = new("TextButton",{Size=UDim2.new(0.5,-5,0,ROW_H),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,AutoButtonColor=false,Text="",Parent=p})
+    row:SetAttribute("OwoLbl", tostring(label):lower())
     corner(row, RM); stroke(row, 1, 0.55, T.Line); regRef(row, "BackgroundColor3", "Card"); regCard(row)
     row.MouseEnter:Connect(function() tween(row, 0.15, {BackgroundColor3 = T.Hover}); playUiSound("hover") end)
     row.MouseLeave:Connect(function() tween(row, 0.15, {BackgroundColor3 = T.Card}) end)
     local kW = kbName and 46 or 0
-    local lbl = new("TextLabel",{Size=UDim2.new(1,-kW-80,1,0),Position=UDim2.new(0,18,0,0),BackgroundTransparency=1,Text=label,TextColor3=T.Text,Font=Enum.Font.GothamMedium,TextSize=13,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=3,Parent=row})
+    local lbl = new("TextLabel",{Size=UDim2.new(1,-kW-76,1,0),Position=UDim2.new(0,16,0,0),BackgroundTransparency=1,Text=label,TextColor3=T.Text,Font=Enum.Font.GothamMedium,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=3,Parent=row})
     regRef(lbl, "TextColor3", "Text")
     local chip
     if kbName then
@@ -3039,7 +3299,6 @@ local function mkT(p, label, def, cb, kbName)
     local knob = new("Frame",{Size=UDim2.new(0,16,0,16),Position=st and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,3,0.5,-8),BackgroundColor3=st and Color3.new(1,1,1) or Color3.fromRGB(240,240,244),BorderSizePixel=0,ZIndex=3,Parent=track}); corner(knob, 8)
     local function setSt(v)
         st = v
-        -- Springy knob + smooth track
         TS:Create(track, TweenInfo.new(sdur(0.25), Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {BackgroundColor3 = st and T.On or T.Off, BackgroundTransparency = st and 0 or 0.25}):Play()
         TS:Create(knob, TweenInfo.new(sdur(0.35), Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = st and UDim2.new(1,-18,0.5,-8) or UDim2.new(0,3,0.5,-8), BackgroundColor3 = st and Color3.new(1,1,1) or Color3.fromRGB(240,240,244)}):Play()
         trackGrad.Enabled = st
@@ -3066,12 +3325,13 @@ local function mkT(p, label, def, cb, kbName)
 end
 
 local function mkB(p, label, cb, kbName)
-    local btn = new("TextButton",{Size=UDim2.new(1,-4,0,46),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,AutoButtonColor=false,Text="",Parent=p})
+    local btn = new("TextButton",{Size=UDim2.new(0.5,-5,0,ROW_H),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,AutoButtonColor=false,Text="",Parent=p})
+    btn:SetAttribute("OwoLbl", tostring(label):lower())
     corner(btn, RM); stroke(btn, 1, 0.55, T.Line); regRef(btn, "BackgroundColor3", "Card"); regCard(btn)
     btn.MouseEnter:Connect(function() tween(btn, 0.15, {BackgroundColor3 = T.Hover}); playUiSound("hover") end)
     btn.MouseLeave:Connect(function() tween(btn, 0.15, {BackgroundColor3 = T.Card}) end)
     local kW = kbName and 46 or 0
-    local lbl = new("TextLabel",{Size=UDim2.new(1,-kW-32,1,0),Position=UDim2.new(0,18,0,0),BackgroundTransparency=1,Text=label,TextColor3=T.Text,Font=Enum.Font.GothamMedium,TextSize=13,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=3,Parent=btn})
+    local lbl = new("TextLabel",{Size=UDim2.new(1,-kW-40,1,0),Position=UDim2.new(0,16,0,0),BackgroundTransparency=1,Text=label,TextColor3=T.Text,Font=Enum.Font.GothamMedium,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=3,Parent=btn})
     regRef(lbl, "TextColor3", "Text")
     local arrow = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(0,20,1,0),Position=UDim2.new(1,-28,0,0),Font=Enum.Font.GothamBold,Text="›",TextColor3=T.Muted,TextSize=16,TextXAlignment=Enum.TextXAlignment.Right,ZIndex=3,Parent=btn})
     regRef(arrow, "TextColor3", "Muted")
@@ -3087,14 +3347,15 @@ end
 
 local function mkS(p, label, mn, mx, def, cb, saveName, isF)
     local v = def
-    local row = new("Frame",{Size=UDim2.new(1,-4,0,58),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,Parent=p})
+    local row = new("Frame",{Size=UDim2.new(0.5,-5,0,ROW_H),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,Parent=p})
+    row:SetAttribute("OwoLbl", tostring(label):lower())
     corner(row, RM); stroke(row, 1, 0.55, T.Line); regRef(row, "BackgroundColor3", "Card"); regCard(row)
-    local lbl = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,18,0,9),Size=UDim2.new(1,-120,0,16),Font=Enum.Font.GothamMedium,Text=label,TextColor3=T.Text,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=3,Parent=row})
+    local lbl = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,16,0,7),Size=UDim2.new(1,-96,0,16),Font=Enum.Font.GothamMedium,Text=label,TextColor3=T.Text,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,ZIndex=3,Parent=row})
     regRef(lbl, "TextColor3", "Text")
-    local vBox = new("Frame",{Position=UDim2.new(1,-72,0,7),Size=UDim2.new(0,54,0,20),BackgroundColor3=T.Accent,BorderSizePixel=0,ZIndex=3,Parent=row})
+    local vBox = new("Frame",{Position=UDim2.new(1,-66,0,6),Size=UDim2.new(0,52,0,20),BackgroundColor3=T.Accent,BorderSizePixel=0,ZIndex=3,Parent=row})
     corner(vBox, 6); gradient(vBox, T.Accent, T.Accent2, 0)
     local vLbl = new("TextLabel",{BackgroundTransparency=1,Size=UDim2.new(1,0,1,0),Font=Enum.Font.GothamBold,Text=tostring(v),TextColor3=ON_ACCENT,TextSize=11,ZIndex=4,Parent=vBox})
-    local track = new("Frame",{Position=UDim2.new(0,18,0,38),Size=UDim2.new(1,-90,0,4),BackgroundColor3=T.Off,BackgroundTransparency=0.2,BorderSizePixel=0,ZIndex=3,Parent=row})
+    local track = new("Frame",{Position=UDim2.new(0,16,0,36),Size=UDim2.new(1,-32,0,4),BackgroundColor3=T.Off,BackgroundTransparency=0.2,BorderSizePixel=0,ZIndex=3,Parent=row})
     corner(track, 2)
     local fill = new("Frame",{Size=UDim2.new((v-mn)/(mx-mn),0,1,0),BackgroundColor3=T.Accent,BorderSizePixel=0,ZIndex=4,Parent=track})
     corner(fill, 2); gradient(fill, T.Accent, T.Accent2, 0)
@@ -3106,7 +3367,7 @@ local function mkS(p, label, mn, mx, def, cb, saveName, isF)
         tween(fill, 0.14, {Size = UDim2.new((v-mn)/(mx-mn),0,1,0)}, Enum.EasingStyle.Quad)
         if cb and (force or v ~= old) then playUiSound("slider"); pcall(cb, v) end
     end
-    local hit = new("TextButton",{Position=UDim2.new(0,8,0,26),Size=UDim2.new(1,-74,0,30),BackgroundTransparency=1,Text="",AutoButtonColor=false,ZIndex=6,Parent=row})
+    local hit = new("TextButton",{Position=UDim2.new(0,8,0,26),Size=UDim2.new(1,-16,0,28),BackgroundTransparency=1,Text="",AutoButtonColor=false,ZIndex=6,Parent=row})
     local d = false
     local function isPress(i) return i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch end
     local function fx(x)
@@ -3131,6 +3392,7 @@ end
 
 local function mkInput(p, label, placeholder, width)
     local row = new("Frame",{Size=UDim2.new(1,-4,0,50),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,Parent=p})
+    row:SetAttribute("OwoLbl", tostring(label):lower())
     corner(row, RM); stroke(row, 1, 0.55, T.Line); regRef(row, "BackgroundColor3", "Card"); regCard(row)
     local w = width or 150
     local l = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,16,0,0),Size=UDim2.new(1,-w-30,1,0),Font=Enum.Font.GothamMedium,Text=label,TextColor3=T.Text,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=3,Parent=row})
@@ -3143,22 +3405,20 @@ end
 
 local function mkAccentBtn(p, text, cb, h)
     local b = new("TextButton",{Size=UDim2.new(1,-4,0,h or 42),BackgroundColor3=Color3.new(1,1,1),Text=text,Font=Enum.Font.GothamBold,TextColor3=ON_ACCENT,TextSize=12,BorderSizePixel=0,AutoButtonColor=false,Parent=p})
+    b:SetAttribute("OwoLbl", tostring(text):lower())
     corner(b, RM); gradient(b, T.Accent, T.Accent2, 0)
     b.MouseButton1Click:Connect(function() playUiSoundLayered("click"); pcall(cb) end)
     return b
 end
 
 -- ══════════════════════════════════════════════════════════════
--- TRANSPARENCY + GLASS
+-- TRANSPARENCY + GLASS CONTROL
 -- ══════════════════════════════════════════════════════════════
 Fn.applyAllTransparency = function()
-    for _, f in ipairs({UI.mainPanel, UI.sidebar}) do
-        local t = (f == UI.sidebar) and TR.Sidebar or TR.Window
-        if Glass.on then Glass.SG.setT(f, t) else f.BackgroundTransparency = t end
-    end
+    if UI.mainPanel then UI.mainPanel.BackgroundTransparency = TR.Window end
     for _, f in ipairs(UI.cards) do if f.Parent then f.BackgroundTransparency = TR.Card end end
     for _, f in pairs(overlays) do
-        if Glass.on then Glass.SG.setT(f, TR.Overlay) else f.BackgroundTransparency = TR.Overlay end
+        if not f:GetAttribute("Bare") and not f:GetAttribute("LBare") then f.BackgroundTransparency = TR.Overlay end
     end
 end
 Fn.setOpacity = function(amount)
@@ -3168,61 +3428,39 @@ Fn.setOpacity = function(amount)
     Fn.applyAllTransparency()
 end
 Fn.applyGlassTransparency = function()
-    local b = Glass.clarity / 100
-    TR.Window = b; TR.Sidebar = math.max(b - 0.02, 0); TR.Content = b; TR.Title = b
-    TR.Card = math.clamp(b - 0.3, 0.12, 0.55); TR.Overlay = math.clamp(b - 0.25, 0.3, 0.7); TR.Notify = math.max(b - 0.05, 0)
+    local t = Glass.winT()
+    TR.Window = t; TR.Sidebar = t; TR.Content = t; TR.Title = t
+    TR.Card = math.clamp(t * 0.6 + 0.12, 0.3, 0.7)
+    TR.Overlay = math.clamp(t * 0.7 + 0.05, 0.3, 0.75)
+    TR.Notify = math.clamp(t * 0.7, 0.2, 0.7)
     Fn.applyAllTransparency()
-end
-Fn.setRealGlass = function(on)
-    for _, f in ipairs({UI.sidebar, UI.mainPanel}) do
-        local t = (f == UI.sidebar) and TR.Sidebar or TR.Window
-        Glass.SG.enable(f, on, t)
-    end
-    for _, f in pairs(overlays) do Glass.SG.enable(f, on, TR.Overlay, true) end
-    task.delay(0.1, Fn.syncGlass)
-end
-Fn.dragState = function(f, on)
-    local mp = UI.mainPanel
-    if not (mp and (f == mp or f:IsAncestorOf(mp))) then return end
-    Glass.dragging = on
-end
-Fn.syncGlass = function()
-    for _, f in ipairs({UI.sidebar, UI.mainPanel}) do
-        if Glass.on then f.BackgroundTransparency = 1
-        else f.BackgroundTransparency = (f == UI.sidebar) and TR.Sidebar or TR.Window end
-    end
-end
-Fn.setGlassEngine = function(hq) Glass.hq = hq; if Glass.on then Fn.setRealGlass(true); Fn.applyGlassTransparency() end end
-Fn.applyTextShadow = function(inst)
-    if not (inst:IsA("TextLabel") or inst:IsA("TextButton") or inst:IsA("TextBox")) then return end
-    local orig = Glass.txt[inst]
-    if Glass.on then
-        if orig == nil then Glass.txt[inst] = {inst.TextStrokeTransparency, inst.TextStrokeColor3} end
-        inst.TextStrokeColor3 = Color3.new(0,0,0); inst.TextStrokeTransparency = 0.6
-    elseif orig then
-        inst.TextStrokeTransparency, inst.TextStrokeColor3 = orig[1], orig[2]; Glass.txt[inst] = nil
-    end
-end
-Fn.setTextShadows = function()
-    for _, g in ipairs({UI.gui, UI.ovGui}) do
-        if g then
-            for _, d in ipairs(g:GetDescendants()) do Fn.applyTextShadow(d) end
-            if not Glass.txtHooked then g.DescendantAdded:Connect(function(d) if Glass.on then task.defer(Fn.applyTextShadow, d) end end) end
-        end
-    end
-    Glass.txtHooked = true
 end
 Fn.setGlass = function(on, quiet)
     if on == Glass.on then return end
     Glass.on = on
     for _, g in ipairs(GlassGrads) do if g.Parent then g.Enabled = on end end
     for _, e in ipairs(GlassStrokes) do if e.s.Parent then e.g.Enabled = on; e.s.Transparency = on and 0.2 or e.o end end
-    Fn.setRealGlass(on)
+    Glass.refreshAll()
     if on then Fn.applyGlassTransparency() else Fn.setOpacity(UI.opacity / 100) end
+    if ToggleReg.LiquidGlass then pcall(ToggleReg.LiquidGlass, on) end
     if Fn.refreshKb then Fn.refreshKb() end
     if Fn.updateHud then Fn.updateHud() end
-    Fn.setTextShadows()
     if not quiet then notify("Liquid Glass", on and "ON" or "OFF", on) end
+end
+Fn.setGlassStyle = function(name, quiet)
+    local s = Glass.styles[name]; if not s then return end
+    Glass.applying = true
+    local map = {clarity="GlassClarity", blur="GlassBlur", shine="GlassShine", tint="GlassTint"}
+    for k, sn in pairs(map) do
+        Glass[k] = s[k]
+        if SliderReg[sn] then pcall(SliderReg[sn].set, s[k]) end
+    end
+    Glass.applying = false
+    Glass.style = name
+    if Glass.paintStyleBtns then Glass.paintStyleBtns() end
+    if not Glass.on then Fn.setGlass(true, true) else Fn.applyGlassTransparency() end
+    Glass.refreshAll()
+    if not quiet then notify("Liquid Glass", "Style: " .. name) end
 end
 Fn.setEffectColor = function(c, quiet)
     EFFECT_COLOR = c
@@ -3237,13 +3475,12 @@ Fn.setEffectColor = function(c, quiet)
 end
 Fn.hudPack = function(presetName)
     if presetName and PRESETS[presetName] then
-        Fn.setGlass(false, true)
         for k, v in pairs(PRESETS[presetName]) do T[k] = v end
         applyTheme(); Fn.applyAllTransparency(); Fn.refreshKb()
     end
     UI.hudSync = true
     Fn.setEffectColor(T.Accent, true)
-    for _, n in ipairs({"MusicHud","Coords","SpeedHud","KbOverlay","FxTint","FxVignette","FxBloom","Crosshair"}) do
+    for _, n in ipairs({"MusicHud","Coords","SpeedHud","KbOverlay","Potions","FxTint","FxVignette","FxBloom","Crosshair"}) do
         if ToggleReg[n] then ToggleReg[n](true) end
     end
     Fn.updateHud()
@@ -3373,6 +3610,7 @@ end
 do
     hdr(pVis, "Effect Color")
     local colorRow = new("Frame",{Size=UDim2.new(1,-4,0,50),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,Parent=pVis})
+    colorRow:SetAttribute("OwoLbl", "color effect color")
     corner(colorRow, RM); stroke(colorRow, 1, 0.55, T.Line); regRef(colorRow, "BackgroundColor3", "Card"); regCard(colorRow)
     local clrLbl = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,18,0,0),Size=UDim2.new(1,-180,1,0),Font=Enum.Font.GothamMedium,Text="Color",TextColor3=T.Text,TextSize=12,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=3,Parent=colorRow})
     regRef(clrLbl, "TextColor3", "Text")
@@ -3395,7 +3633,11 @@ do
         mkT(pVis, m, false, function(s) if s then Fn.setSky(m) elseif Fn.Sky.mode == m then Fn.setSky("Off") end end, "Sky" .. (m:gsub(" ", "")))
     end
     hdr(pVis, "Weather")
-    mkT(pVis, "Rain", false, function(s) feat.rain = s; Wx.rain() end, "WxRain")
+    mkT(pVis, "Rain", false, function(s) feat.rain = s; Wx.rain(); if ToggleReg.WxRipples then ToggleReg.WxRipples(s) end end, "WxRain")
+    mkT(pVis, "Rain Ripples", false, function(s) feat.rainRipples = s end, "WxRipples")
+    mkS(pVis, "Ripple Amount", 4, 80, 28, function(v) feat.rippleRate = v end, "RippleRate")
+    mkS(pVis, "Ripple Radius", 15, 90, 45, function(v) feat.rippleRadius = v end, "RippleRadius")
+    mkS(pVis, "Ripple Size", 0.5, 4, 1.6, function(v) feat.rippleSize = v end, "RippleSize", true)
     mkT(pVis, "Snow", false, function(s) feat.snow = s; Wx.snow() end, "WxSnow")
     mkT(pVis, "Fog", false, function(s) feat.fog = s; Wx.fog() end, "WxFog")
     mkS(pVis, "Fog Density", 0, 1, 0.35, function(v) feat.fogDensity = v; Wx.fogDensity(v) end, "FogDensity", true)
@@ -3493,7 +3735,7 @@ do
     mkS(pVis, "Gap", 0, 20, 4, function(v) feat.crosshairGap = v; Fn.rebuildCrosshair() end, "ChGap")
     mkT(pVis, "Center Dot", true, function(s) feat.crosshairDot = s; Fn.rebuildCrosshair() end, "ChDot")
     mkT(pVis, "Outline", true, function(s) feat.crosshairOutline = s; Fn.rebuildCrosshair() end, "ChOutline")
-    local chColorBox = mkInput(pVis, "Color", "#FFFFFF")
+    local chColorBox = mkInput(pVis, "Crosshair Color", "#FFFFFF")
     chColorBox.Text = "#FFFFFF"
     chColorBox.FocusLost:Connect(function()
         local c = hexToColor(chColorBox.Text)
@@ -3506,6 +3748,7 @@ do
     hdr(pOver, "HUD Pack")
     mkB(pOver, "Enable Full HUD (current theme)", function() Fn.hudPack() end)
     hdr(pOver, "Overlays")
+    mkT(pOver, "Potions (Active Effects)", false, function(s) overlays.potions.Visible = s; if s and Fn.potionsRebuild then Fn.potionsRebuild() end end, "Potions")
     mkT(pOver, "Music HUD", false, function(s) overlays.musicHud.Visible = s; if s then Fn.updateHud() end end, "MusicHud")
     mkT(pOver, "Lyrics Bar", false, function(s) overlays.lyrics.Visible = s; Lyrics.barKey = nil end, "LyricsBar")
     mkT(pOver, "Coordinates", false, function(s) overlays.coords.Visible = s end, "Coords")
@@ -3517,6 +3760,12 @@ do
     mkT(pOver, "FPS Counter", false, function(s) overlays.fps.Visible = s end, "FpsBox")
     mkT(pOver, "Ping", false, function(s) overlays.ping.Visible = s end, "PingBox")
     mkT(pOver, "Watermark", false, function(s) overlays.watermark.Visible = s end, "Watermark")
+    hdr(pOver, "Edit Widgets")
+    local editHint = new("TextLabel",{Size=UDim2.new(1,-4,0,58),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,Font=Enum.Font.Gotham,
+        Text="  Open the chat (press / or click the chat bar) to enter edit mode: drag widgets to move them, click any widget to morph it into its next layout (Default / Compact / Large / Bare), drag the corner to resize Keystrokes and Mousestrokes. Keybinds has a List and a Pills layout, Potions has 4 pill layouts.",
+        TextColor3=T.Dim,TextSize=11,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Center,TextWrapped=true,BorderSizePixel=0,Parent=pOver})
+    editHint:SetAttribute("OwoLbl", "edit widgets chat")
+    corner(editHint, RM); stroke(editHint, 1, 0.55, T.Line); regRef(editHint, "BackgroundColor3", "Card"); regRef(editHint, "TextColor3", "Dim"); regCard(editHint)
     hdr(pOver, "Status Bar Lyrics")
     mkT(pOver, "Show Lyrics in Status Bar", true, function(s) feat.lyricsInStatusBar = s; Lyrics.sbKey = nil end, "StatusBarLyrics")
     mkT(pOver, "Smooth Transition", true, function(s) feat.smoothLyricsTransition = s end, "SmoothLyrics")
@@ -3531,14 +3780,15 @@ do
         statusBar = "Status Bar", fps = "FPS Counter", coords = "Coordinates",
         ping = "Ping", watermark = "Watermark", keybinds = "Keybind Overlay",
         musicHud = "Music HUD", speed = "Speed", lyrics = "Lyrics Bar",
-        keystrokes = "Keystrokes", mousestrokes = "Mousestrokes",
+        keystrokes = "Keystrokes", mousestrokes = "Mousestrokes", potions = "Potions",
     }
     for key, label in pairs(OVERLAY_LABELS) do
         local btn = new("TextButton", {
-            Size = UDim2.new(1, -4, 0, 34), BackgroundColor3 = T.Card,
+            Size = UDim2.new(0.5, -5, 0, 40), BackgroundColor3 = T.Card,
             BackgroundTransparency = TR.Card, BorderSizePixel = 0,
             AutoButtonColor = false, Text = "", Parent = pOver,
         })
+        btn:SetAttribute("OwoLbl", ("reset " .. label):lower())
         corner(btn, RM); stroke(btn, 1, 0.55, T.Line)
         regRef(btn, "BackgroundColor3", "Card"); regCard(btn)
         local lbl = new("TextLabel", {
@@ -3563,6 +3813,7 @@ do
             local d = UI.defaultPos[key]
             if f and d then
                 tween(f, 0.2, { Position = d })
+                if Fn.resetLayout then Fn.resetLayout(key) end
                 notify("Overlay", label .. " reset")
             else
                 notify("Overlay", label .. " not available", false)
@@ -3577,12 +3828,63 @@ do
     mkS(pTheme, "UI Smoothness", 0.3, 3, 1.0, function(v) Smooth.level = v end, "UISmoothness", true)
     mkS(pTheme, "Color Transition Speed", 0.5, 3, 4.0, function(v) Smooth.colorSpeed = v end, "ColorSpeed", true)
     mkS(pTheme, "Effect Transition Speed", 1, 15, 7.0, function(v) Smooth.effectSpeed = v end, "EffectSpeed", true)
+
     hdr(pTheme, "Liquid Glass")
-    mkB(pTheme, "Liquid Glass", function() Fn.setGlass(not Glass.on) end)
-    mkT(pTheme, "HQ Glass (slower)", false, function(s) Fn.setGlassEngine(s) end, "GlassHQ")
-    mkS(pTheme, "Glass Clarity", 30, 100, 92, function(v) Glass.clarity = v; if Glass.on then Fn.applyGlassTransparency() end end, "GlassClarity")
-    mkS(pTheme, "Glass Blur", 0, 30, 4, function(v) Glass.blur = v; if Glass.on then Fn.setRealGlass(true) end end, "GlassBlur")
-    mkS(pTheme, "Glass Refraction", 1, 4, 2.4, function(v) Glass.refraction = v end, "GlassRefraction", true)
+    -- live preview: colourful backdrop with a real glass pill on top
+    local pv = new("Frame",{Size=UDim2.new(1,-4,0,120),BackgroundColor3=Color3.fromRGB(10,12,22),BorderSizePixel=0,ClipsDescendants=true,Parent=pTheme})
+    pv:SetAttribute("OwoLbl", "liquid glass preview")
+    corner(pv, RM); stroke(pv, 1, 0.55, T.Line, true)
+    local function orb(x, y, s, c)
+        local o = new("Frame",{Size=UDim2.new(0,s,0,s),Position=UDim2.new(x,-s/2,y,-s/2),BackgroundColor3=c,BorderSizePixel=0,Parent=pv})
+        corner(o, s/2); return o
+    end
+    orb(0.16, 0.30, 74, Color3.fromRGB(255,110,150)); orb(0.50, 0.78, 96, Color3.fromRGB(90,160,255))
+    orb(0.84, 0.28, 66, Color3.fromRGB(120,255,190)); orb(0.68, 0.50, 40, Color3.fromRGB(255,200,90))
+    local gp = new("Frame",{Size=UDim2.new(0.62,0,0,64),Position=UDim2.new(0.19,0,0.5,-32),BackgroundColor3=T.Bg,BackgroundTransparency=Glass.winT(),BorderSizePixel=0,Parent=pv})
+    corner(gp, 18)
+    Glass.G.decorate(gp, {always=true})
+    local gpT = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,12),Size=UDim2.new(1,0,0,22),Font=Enum.Font.GothamBold,Text="Liquid Glass",TextColor3=Color3.new(1,1,1),TextSize=16,ZIndex=5,Parent=gp})
+    local gpS = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,0,0,34),Size=UDim2.new(1,0,0,16),Font=Enum.Font.Gotham,Text="move your cursor over me",TextColor3=Color3.fromRGB(200,205,220),TextSize=10,ZIndex=5,Parent=gp})
+    Glass.refreshAll()
+
+    -- style presets
+    local styleRow = new("Frame",{Size=UDim2.new(1,-4,0,38),BackgroundTransparency=1,Parent=pTheme})
+    styleRow:SetAttribute("OwoLbl", "glass style frosted clear tinted crystal midnight")
+    new("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder,Parent=styleRow})
+    Glass.styleBtns = {}
+    for i, name in ipairs(Glass.styleOrder) do
+        local b = new("TextButton",{Size=UDim2.new(1/#Glass.styleOrder,-5,1,0),LayoutOrder=i,BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,Text=name,Font=Enum.Font.GothamBold,TextColor3=T.Dim,TextSize=11,BorderSizePixel=0,AutoButtonColor=false,Parent=styleRow})
+        corner(b, RM); stroke(b, 1, 0.55, T.Line, true); regRef(b, "BackgroundColor3", "Card"); regCard(b)
+        b.MouseButton1Click:Connect(function() playUiSoundLayered("click"); Fn.setGlassStyle(name) end)
+        Glass.styleBtns[name] = b
+    end
+    Glass.paintStyleBtns = function()
+        for n, b in pairs(Glass.styleBtns) do
+            local sel = (n == Glass.style)
+            b.TextColor3 = sel and T.Accent or T.Dim
+            local s = b:FindFirstChildOfClass("UIStroke")
+            if s then s.Color = sel and T.Accent or T.Line; s.Transparency = sel and 0.2 or 0.55 end
+        end
+    end
+    Glass.paintStyleBtns()
+
+    mkT(pTheme, "Liquid Glass", false, function(s) Fn.setGlass(s) end, "LiquidGlass")
+    mkT(pTheme, "Blur World Behind Menu", true, function(s) Glass.worldBlur = s end, "GlassWorldBlur")
+    mkT(pTheme, "Light Follows Cursor", true, function(s) Glass.anim = s end, "GlassAnim")
+    local function gset(field, post)
+        return function(v)
+            Glass[field] = v
+            if not Glass.applying then Glass.style = "Custom"; if Glass.paintStyleBtns then Glass.paintStyleBtns() end end
+            if post then post() end
+            Glass.refreshAll()
+        end
+    end
+    mkS(pTheme, "Glass Clarity", 30, 100, 62, gset("clarity", function() if Glass.on then Fn.applyGlassTransparency() end end), "GlassClarity")
+    mkS(pTheme, "Frost Blur", 0, 30, 10, gset("blur"), "GlassBlur")
+    mkS(pTheme, "Shine", 0, 1, 0.55, gset("shine"), "GlassShine", true)
+    mkS(pTheme, "Edge Light", 1, 4, 2.4, gset("refraction"), "GlassRefraction", true)
+    mkS(pTheme, "Tint", 0, 1, 0, gset("tint"), "GlassTint", true)
+
     hdr(pTheme, "UI Transparency")
     mkS(pTheme, "Window Opacity", 0, 90, 5, function(v) UI.opacity = v; if not Glass.on then Fn.setOpacity(v / 100) end end, "UITransparency")
     hdr(pTheme, "Custom Background")
@@ -3605,6 +3907,7 @@ do
             task.delay(0.85, function()
                 if UI.hudSync then Fn.setEffectColor(PRESETS[name].Accent, true) end
                 Fn.refreshKb(); Fn.updateHud()
+                if Glass.paintStyleBtns then Glass.paintStyleBtns() end
                 notify("Theme", name .. " applied")
             end)
         end)
@@ -3615,12 +3918,14 @@ end
 do
     hdr(pMusic, "Now Playing")
     local nowCard = new("Frame",{Size=UDim2.new(1,-4,0,72),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,Parent=pMusic})
+    nowCard:SetAttribute("OwoLbl", "now playing")
     corner(nowCard, RM); stroke(nowCard, 1, 0.55, T.Line); regRef(nowCard, "BackgroundColor3", "Card"); regCard(nowCard)
     UI.nowLbl = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,16,0,12),Size=UDim2.new(1,-32,0,20),Font=Enum.Font.GothamBold,Text="Nothing playing",TextColor3=T.Text,TextSize=13,TextXAlignment=Enum.TextXAlignment.Left,TextTruncate=Enum.TextTruncate.AtEnd,Parent=nowCard})
     regRef(UI.nowLbl, "TextColor3", "Text")
     local nowSub = new("TextLabel",{BackgroundTransparency=1,Position=UDim2.new(0,16,0,34),Size=UDim2.new(1,-32,0,16),Font=Enum.Font.Gotham,Text="Save songs below, then control them here or from the Music HUD",TextColor3=T.Muted,TextSize=10,TextXAlignment=Enum.TextXAlignment.Left,Parent=nowCard})
     regRef(nowSub, "TextColor3", "Muted")
     local ctrlRow = new("Frame",{Size=UDim2.new(1,-4,0,42),BackgroundTransparency=1,Parent=pMusic})
+    ctrlRow:SetAttribute("OwoLbl", "prev play pause stop next loop")
     new("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder,Parent=ctrlRow})
     local function mkMusicBtn(text, order, cb)
         local b = new("TextButton",{Size=UDim2.new(0.2,-5,1,0),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,Text=text,Font=Enum.Font.GothamBold,TextColor3=T.Text,TextSize=11,BorderSizePixel=0,AutoButtonColor=false,LayoutOrder=order,Parent=ctrlRow})
@@ -3686,6 +3991,7 @@ do
         Lyrics.fetch(q)
     end)
     local pasteRow = new("Frame",{Size=UDim2.new(1,-4,0,96),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,Parent=pMusic})
+    pasteRow:SetAttribute("OwoLbl", "paste lyrics")
     corner(pasteRow, RM); stroke(pasteRow, 1, 0.55, T.Line); regRef(pasteRow, "BackgroundColor3", "Card"); regCard(pasteRow)
     local pasteBox = new("TextBox",{Size=UDim2.new(1,-20,1,-16),Position=UDim2.new(0,10,0,8),BackgroundTransparency=1,Font=Enum.Font.Gotham,Text="",PlaceholderText="Paste lyrics here ([01:23.45] line = synced LRC, plain text = auto-spread)",TextColor3=T.Text,PlaceholderColor3=T.Muted,TextSize=11,MultiLine=true,TextWrapped=true,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Top,ClearTextOnFocus=false,Parent=pasteRow})
     regRef(pasteBox, "TextColor3", "Text")
@@ -3693,6 +3999,7 @@ do
     mkB(pMusic, "Clear Lyrics", function() Lyrics.clear(); notify("Lyrics", "Cleared", false) end)
     hdr(pMusic, "Search Roblox Library")
     local searchRow = new("Frame",{Size=UDim2.new(1,-4,0,50),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,Parent=pMusic})
+    searchRow:SetAttribute("OwoLbl", "search roblox library song")
     corner(searchRow, RM); stroke(searchRow, 1, 0.55, T.Line); regRef(searchRow, "BackgroundColor3", "Card"); regCard(searchRow)
     local searchInput = new("TextBox",{Size=UDim2.new(1,-140,0,30),Position=UDim2.new(0,12,0.5,-15),BackgroundColor3=T.Bg,BackgroundTransparency=0.3,Font=Enum.Font.GothamMedium,Text="",PlaceholderText="song name or artist",TextColor3=T.Text,PlaceholderColor3=T.Muted,TextSize=12,BorderSizePixel=0,ClearTextOnFocus=false,Parent=searchRow})
     corner(searchInput, 8); stroke(searchInput, 1, 0.55, T.Line)
@@ -3758,6 +4065,7 @@ end
 do
     hdr(pFriends, "Friends")
     local topRow = new("Frame", {Size = UDim2.new(1, -4, 0, 42), BackgroundTransparency = 1, Parent = pFriends})
+    topRow:SetAttribute("OwoLbl", "refresh friends")
     new("UIListLayout", {FillDirection = Enum.FillDirection.Horizontal, Padding = UDim.new(0, 6), SortOrder = Enum.SortOrder.LayoutOrder, Parent = topRow})
     local refreshBtn = new("TextButton", {Size = UDim2.new(0.5, -3, 1, 0), BackgroundColor3 = Color3.new(1,1,1), Text = "Refresh", Font = Enum.Font.GothamBold, TextColor3 = ON_ACCENT, TextSize = 12, BorderSizePixel = 0, AutoButtonColor = false, LayoutOrder = 1, Parent = topRow})
     corner(refreshBtn, RM); gradient(refreshBtn, T.Accent, T.Accent2, 0)
@@ -3811,7 +4119,7 @@ end
 do
     local Saves, SaveOrder = {}, {}
     local SAVE_FILE = "owo_saves.json"
-    local OVKB = {statusBar="StatusBar", fps="FpsBox", coords="Coords", ping="PingBox", watermark="Watermark", keybinds="KbOverlay", musicHud="MusicHud", speed="SpeedHud", lyrics="LyricsBar", keystrokes="Keystrokes", mousestrokes="Mousestrokes"}
+    local OVKB = {statusBar="StatusBar", fps="FpsBox", coords="Coords", ping="PingBox", watermark="Watermark", keybinds="KbOverlay", musicHud="MusicHud", speed="SpeedHud", lyrics="LyricsBar", keystrokes="Keystrokes", mousestrokes="Mousestrokes", potions="Potions"}
     local FEATMAP = {
         Fly="fly", InfJump="infJump", NoClip="noclip", FreeCam="freeCam", Fullbright="fullbright",
         VFXGlow="glow", VFXNeon="neon", VFXTrail="trail", VFXFire="fire", VFXSparkle="sparkle",
@@ -3831,6 +4139,7 @@ do
         EspDistance="espDistance", EspChams="espChams", EspTeam="espTeamCheck",
         Crosshair="crosshair", ChDot="crosshairDot", ChOutline="crosshairOutline",
         UISounds="uiSounds", StatusBarLyrics="lyricsInStatusBar", SmoothLyrics="smoothLyricsTransition",
+        EditAnywhere="editAnywhere", WxRipples="rainRipples",
     }
     local function col(t) if type(t) == "table" and #t == 3 then return Color3.new(t[1], t[2], t[3]) end return nil end
     local function snap()
@@ -3846,7 +4155,7 @@ do
         d.meta.winPos = {xS=win.Position.X.Scale, xO=win.Position.X.Offset, yS=win.Position.Y.Scale, yO=win.Position.Y.Offset}
         d.meta.winSize = {w=win.Size.X.Offset, h=win.Size.Y.Offset}
         d.music = {volume=Music.volume, looped=Music.looped}
-        d.glass = {on=Glass.on, clarity=Glass.clarity, blur=Glass.blur, refraction=Glass.refraction, hq=Glass.hq, opacity=UI.opacity}
+        d.glass = {on=Glass.on, style=Glass.style, clarity=Glass.clarity, blur=Glass.blur, shine=Glass.shine, tint=Glass.tint, refraction=Glass.refraction, worldBlur=Glass.worldBlur, anim=Glass.anim, opacity=UI.opacity}
         d.smooth = {level=Smooth.level, colorSpeed=Smooth.colorSpeed, effectSpeed=Smooth.effectSpeed}
         local favList = {}
         for id, v in pairs(Friends.favourites) do if v then favList[#favList+1] = id end end
@@ -3870,6 +4179,8 @@ do
             if Fn.rebuildCrosshair then Fn.rebuildCrosshair() end
             if Fn.setEspEnabled then Fn.setEspEnabled(feat.espEnabled) end
             if Fn.applyUIBackground then Fn.applyUIBackground() end
+            if Fn.potionsRebuild then Fn.potionsRebuild() end
+            if Fn.applyAllLayouts then Fn.applyAllLayouts() end
         end
         if d.sliders then for n, v in pairs(d.sliders) do local s = SliderReg[n]; if s then pcall(function() s.set(v) end) end end end
         if d.overlays then for name, pos in pairs(d.overlays) do local f = overlays[name]; if f then f.Position = UDim2.new(pos.xS, pos.xO, pos.yS, pos.yO); local m = OVKB[name]; if m and ToggleReg[m] then pcall(ToggleReg[m], pos.vis) else f.Visible = pos.vis end end end; Fn.refreshKb() end
@@ -3884,10 +4195,11 @@ do
         end
         if d.glass then
             if d.glass.opacity then UI.opacity = d.glass.opacity end
-            if d.glass.clarity then Glass.clarity = d.glass.clarity end
-            if d.glass.blur then Glass.blur = d.glass.blur end
-            if d.glass.refraction then Glass.refraction = d.glass.refraction end
-            if d.glass.hq ~= nil and ToggleReg.GlassHQ then pcall(ToggleReg.GlassHQ, d.glass.hq == true) end
+            for _, k in ipairs({"clarity","blur","shine","tint","refraction"}) do if type(d.glass[k]) == "number" then Glass[k] = d.glass[k] end end
+            if d.glass.style then Glass.style = d.glass.style; if Glass.paintStyleBtns then Glass.paintStyleBtns() end end
+            if d.glass.worldBlur ~= nil and ToggleReg.GlassWorldBlur then pcall(ToggleReg.GlassWorldBlur, d.glass.worldBlur == true) end
+            if d.glass.anim ~= nil and ToggleReg.GlassAnim then pcall(ToggleReg.GlassAnim, d.glass.anim == true) end
+            Glass.refreshAll()
             if d.glass.on then Fn.setGlass(true, true) end
         end
         if d.smooth then
@@ -3930,6 +4242,7 @@ do
         notify("Save", "Saved: " .. name)
     end
     local br = new("Frame",{Size=UDim2.new(1,-4,0,46),BackgroundTransparency=1,Parent=pSaves})
+    br:SetAttribute("OwoLbl", "save quick save")
     new("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,Padding=UDim.new(0,8),Parent=br})
     local sb = new("TextButton",{Size=UDim2.new(0.5,-4,1,0),BackgroundColor3=Color3.new(1,1,1),Text="Save",Font=Enum.Font.GothamBold,TextColor3=ON_ACCENT,TextSize=12,BorderSizePixel=0,AutoButtonColor=false,Parent=br})
     corner(sb, RM); gradient(sb, T.Accent, T.Accent2, 0)
@@ -4070,11 +4383,14 @@ do
     local hint = new("TextLabel",{Size=UDim2.new(1,-4,0,44),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,Font=Enum.Font.Gotham,
         Text="  Type a name or display name (partial works). You return to your spot afterwards.",
         TextColor3=T.Dim,TextSize=11,TextXAlignment=Enum.TextXAlignment.Left,TextYAlignment=Enum.TextYAlignment.Center,TextWrapped=true,BorderSizePixel=0,Parent=pMore})
+    hint:SetAttribute("OwoLbl", "fling hint")
     corner(hint, RM); stroke(hint, 1, 0.55, T.Line); regRef(hint, "BackgroundColor3", "Card"); regRef(hint, "TextColor3", "Dim"); regCard(hint)
 end
 
 -- MISC
 do
+    hdr(pMisc, "Widgets")
+    mkT(pMisc, "Edit Widgets Without Chat", false, function(s) feat.editAnywhere = s end, "EditAnywhere")
     hdr(pMisc, "UI Sounds")
     mkT(pMisc, "UI Sounds", false, function(s)
         feat.uiSounds = s
@@ -4100,6 +4416,7 @@ do
     end)
     hdr(pMisc, "About")
     local aboutCard = new("Frame",{Size=UDim2.new(1,-4,0,96),BackgroundColor3=T.Card,BackgroundTransparency=TR.Card,BorderSizePixel=0,Parent=pMisc})
+    aboutCard:SetAttribute("OwoLbl", "about made with love")
     corner(aboutCard, RM); stroke(aboutCard, 1, 0.55, T.Line); regRef(aboutCard, "BackgroundColor3", "Card"); regCard(aboutCard)
     local aboutStripe = new("Frame",{Size=UDim2.new(1,0,0,2),BackgroundColor3=Color3.new(1,1,1),BorderSizePixel=0,Parent=aboutCard})
     corner(aboutStripe, RM); gradient(aboutStripe, T.Accent, T.Accent2, 0)
